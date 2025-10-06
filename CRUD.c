@@ -1,13 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+
 
 #define FILE_NAME "users.txt"
 
 struct User {
-    int id;
+    unsigned int id;
     char name[100];
-    int age;
+    unsigned short age;
 };
 
 void trimNewline(char *str) {
@@ -17,45 +19,64 @@ void trimNewline(char *str) {
     }
 }
 
-void createUser();
-void readUsers();
-void updateUser();
-void deleteUser();
-
-int main() {
-    int choice;
+// Helper function to get valid integer input from user using fgets
+int getIntegerInput(const char *prompt) {
+    char buffer[100];
+    int value;
     while (1) {
-        printf("\n -------User Management System-----\n");
-        printf("1-Create User\n");
-        printf("2-Read Users\n");
-        printf("3-Update User\n");
-        printf("4-Delete User\n");
-        printf("5-Exit\n");
-        printf("Enter your choice 1,2,3,4,5 : ");
-        scanf("%d", &choice);
-        getchar();
-        switch (choice) {
-            case 1:
-                createUser();
-                break;
-            case 2:
-                readUsers();
-                break;
-            case 3:
-                updateUser();
-                break;
-            case 4:
-                deleteUser();
-                break;
-            case 5:
-                printf("exiting...\n");
-                exit(0);
-            default:
-                printf("write valid choice\n");
+        printf("%s", prompt);
+        if (fgets(buffer, sizeof(buffer), stdin)) {
+            buffer[strcspn(buffer, "\n")] = '\0'; // remove newline
+
+            char *endptr;
+            value = strtol(buffer, &endptr, 10);
+
+            if (endptr != buffer && *endptr == '\0') {
+                return value;
+            } else {
+                printf("Please enter valid number. Please try again.\n");
+            }
+        } else {
+            printf("Error reading input. Try again.\n");
+            clearerr(stdin);
         }
     }
-    return 0;
 }
+
+// Helper function to get string input containing only alphabets
+void getStringInput(const char *prompt, char *buffer, size_t size) {
+    int valid;
+    do {
+        valid = 1; // first lets assume its valid
+        printf("%s", prompt);
+
+        if (!fgets(buffer, size, stdin)) {
+            printf("Error reading input.\n");
+            clearerr(stdin);
+            continue;
+        }
+
+        buffer[strcspn(buffer, "\n")] = '\0'; 
+
+        // Empty check
+        if (strlen(buffer) == 0) {
+            printf("Input cannot be empty...write your name.\n");
+            valid = 0;
+            continue;
+        }
+
+        // Check if every character is alphabetic or space
+        for (size_t i = 0; i < strlen(buffer); i++) {
+            if (!isalpha((unsigned char)buffer[i]) && !isspace((unsigned char)buffer[i])) {
+                printf("Invalid Name. Only alphabets and spaces are allowed.\n");
+                valid = 0;
+                break;
+            }
+        }
+
+    } while (!valid);
+}
+
 
 //create new user 
 void createUser() {
@@ -65,15 +86,10 @@ void createUser() {
         return;
     }
     struct User user;
-    printf("Enter your ID: ");
-    scanf("%d", &user.id);
-    getchar();
-    printf("Enter your Name: ");
-    fgets(user.name, sizeof(user.name), stdin);
-    trimNewline(user.name);
-    printf("Enter your Age: ");
-    scanf("%d", &user.age);
-
+    user.id = getIntegerInput("Enter your ID: ");
+    getStringInput("Enter your Name: ", user.name, sizeof(user.name));
+    user.age = getIntegerInput("Enter your Age: ");
+    
     struct User temp;
     rewind(fp);
     while (fscanf(fp, "%d,%99[^,],%d\n", &temp.id, temp.name, &temp.age) == 3) {
@@ -106,7 +122,7 @@ void readUsers() {
     fclose(fp);
 }
 
-//update user name and age by their id
+
 void updateUser() {
     FILE *fp = fopen(FILE_NAME, "r");
     if (!fp) {
@@ -114,45 +130,68 @@ void updateUser() {
         return;
     }
 
-    FILE *tempFile = fopen("temp.txt", "w");
-    if (!tempFile) {
-        printf("Error creating temp file.\n");
-        fclose(fp);
+    struct User *users = NULL;
+    int count = 0;
+
+    // first...read all users into memory dynamically
+    struct User temp;
+    while (fscanf(fp, "%d,%99[^,],%hu\n", &temp.id, temp.name, &temp.age) == 3) {
+        struct User *newBlock = realloc(users, (count + 1) * sizeof(struct User));
+        if (!newBlock) {
+            printf("Memory allocation failed.\n");
+            free(users);
+            fclose(fp);
+            return;
+        }
+        users = newBlock;
+        users[count++] = temp;
+    }
+    fclose(fp);
+
+    if (count == 0) {
+        printf("No records found.\n");
+        free(users);
         return;
     }
 
-    int id, found = 0;
-    struct User user;
-    printf("Enter id to update: ");
-    scanf("%d", &id);
-    getchar();
+    // Second - ask user for ID to update
+    int id = getIntegerInput("Enter ID to update: ");
+    int found = 0;
 
-    while (fscanf(fp, "%d,%99[^,],%d\n", &user.id, user.name, &user.age) == 3) {
-        if (user.id == id) {
+    // Third - modify record in memory struct memory
+    for (int i = 0; i < count; i++) {
+        if (users[i].id == id) {
             found = 1;
-            printf("enter your new Name: ");
-            fgets(user.name, sizeof(user.name), stdin);
-            trimNewline(user.name);
-            printf("enter your new age: ");
-            scanf("%d", &user.age);
-            getchar();
+            getStringInput("Enter new name: ", users[i].name, sizeof(users[i].name));
+            users[i].age = getIntegerInput("Enter new age: ");
+            break;
         }
-        fprintf(tempFile, "%d,%s,%d\n", user.id, user.name, user.age);
     }
 
-    fclose(fp);
-    fclose(tempFile);
-    remove(FILE_NAME);
-    rename("temp.txt", FILE_NAME);
-
-    if (found) {
-        printf("User updated successfully\n");
-    } else {
+    if (!found) {
         printf("No user found with ID %d\n", id);
+        free(users);
+        return;
     }
+
+    // 4- Rewrite the file into users.txt  with updated records
+    fp = fopen(FILE_NAME, "w");
+    if (!fp) {
+        printf("Error rewriting file.\n");
+        free(users);
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        fprintf(fp, "%d,%s,%hu\n", users[i].id, users[i].name, users[i].age);
+    }
+    fclose(fp);
+    free(users);
+
+    printf("User updated successfully.\n");
 }
 
-// delete user by their id  
+
 void deleteUser() {
     FILE *fp = fopen(FILE_NAME, "r");
     if (!fp) {
@@ -160,34 +199,98 @@ void deleteUser() {
         return;
     }
 
-    FILE *tempFile = fopen("temp.txt", "w");
-    if (!tempFile) {
-        printf("Error creating temp file.\n");
-        fclose(fp);
+    struct User *users = NULL;
+    int count = 0;
+
+
+    struct User temp;
+    while (fscanf(fp, "%d,%99[^,],%hu\n", &temp.id, temp.name, &temp.age) == 3) {
+        struct User *newBlock = realloc(users, (count + 1) * sizeof(struct User));
+        if (!newBlock) {
+            printf("Memory allocation failed.\n");
+            free(users);
+            fclose(fp);
+            return;
+        }
+        users = newBlock;
+        users[count++] = temp;
+    }
+    fclose(fp);
+
+    if (count == 0) {
+        printf("No users to delete.\n");
+        free(users);
         return;
     }
 
-    int id, found = 0;
-    struct User user;
-    printf("Enter ID to delete: ");
-    scanf("%d", &id);
+    int id = getIntegerInput("Enter ID to delete: ");
+    int found = 0;
 
-    while (fscanf(fp, "%d,%99[^,],%d\n", &user.id, user.name, &user.age) == 3) {
-        if (user.id == id) {
+    for (int i = 0; i < count; i++) {
+        if (users[i].id == id) {
             found = 1;
-            continue;
+            for (int j = i; j < count - 1; j++) {
+                users[j] = users[j + 1];
+            }
+            count--;
+            break;
         }
-        fprintf(tempFile, "%d,%s,%d\n", user.id, user.name, user.age);
+    }
+
+    if (!found) {
+        printf("No user found with ID %d\n", id);
+        free(users);
+        return;
+    }
+
+    fp = fopen(FILE_NAME, "w");
+    if (!fp) {
+        printf("Error rewriting file.\n");
+        free(users);
+        return;
+    }
+
+    for (int i = 0; i < count; i++) {
+        fprintf(fp, "%d,%s,%hu\n", users[i].id, users[i].name, users[i].age);
     }
 
     fclose(fp);
-    fclose(tempFile);
-    remove(FILE_NAME);
-    rename("temp.txt", FILE_NAME);
+    free(users);
 
-    if (found) {
-        printf("User deleted successfully\n");
-    } else {
-        printf("No user found with ID %d\n", id);
-    }
+    printf("User deleted successfully.\n");
 }
+
+int main() {
+    int choice;
+    while (1) {
+        printf("\n -------User Management System-----\n");
+        printf("1-Create User\n");
+        printf("2-Read Users\n");
+        printf("3-Update User\n");
+        printf("4-Delete User\n");
+        printf("5-Exit\n");
+        choice = getIntegerInput("Enter your choice 1,2,3,4,5 : ");
+
+        switch (choice) {
+            case 1:
+                createUser();
+                break;
+            case 2:
+                readUsers();
+                break;
+            case 3:
+                updateUser();
+                break;
+            case 4:
+                deleteUser();
+                break;
+            case 5:
+                printf("exit from code \n");
+                exit(0);
+            default:
+                printf("write valid choice\n");
+        }
+    }
+    return 0;
+}
+
