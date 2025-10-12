@@ -11,72 +11,72 @@ typedef enum {
     INVALID_MARKS,
     INVALID_ROLL_NUMBER,
     ROLL_NUMBER_EXISTS,
+    MEMORY_ALLOCATION_FAILED,
 } ErrorCode;
+
 struct students_data{
         unsigned short roll_number;
         char name[100];
-        unsigned short Subject1_marks;
-        unsigned short Subject2_marks;
-        unsigned short Subject3_marks;
+        unsigned short subject1_marks;
+        unsigned short subject2_marks;
+        unsigned short subject3_marks;
 };
 ErrorCode validate_user_input(struct students_data student_array[], int count,
-                          char *roll_str, char *name,
-                         unsigned short marks1, unsigned short marks2, unsigned short marks3) {
-    // Check if roll number is numeric
-    for (int i = 0; roll_str[i] != '\0'; i++) {
-        if (roll_str[i] < '0' || roll_str[i] > '9') {
-            return INVALID_ROLL_NUMBER;
-        }
-    }
-    unsigned short roll = (unsigned short)atoi(roll_str);
-    //roll number must be between 1 to 100
-    if(roll<0|| roll>100||roll==0){
+                              struct students_data new_student) {
+
+    unsigned short roll = new_student.roll_number;
+
+    // Roll number must be between 1 to 100
+    if (roll == 0 || roll > 100) {
         return INVALID_ROLL_NUMBER;
     }
 
-
-    //Check if roll number alreary exists
+    // Check if roll number already exists
     for (int i = 0; i < count; i++) {
         if (student_array[i].roll_number == roll)
             return ROLL_NUMBER_EXISTS;
     }
 
-    //only letters and space allowed
-    for (int i = 0; name[i] != '\0'; i++) {
-        if (!((name[i] >= 'A' && name[i] <= 'Z') || 
-              (name[i] >= 'a' && name[i] <= 'z') || 
-              name[i] == ' ')) {
+    // Only letters and space allowed in name
+    for (int i = 0; new_student.name[i] != '\0'; i++) {
+        if (!((new_student.name[i] >= 'A' && new_student.name[i] <= 'Z') || 
+              (new_student.name[i] >= 'a' && new_student.name[i] <= 'z') || 
+              new_student.name[i] == ' ')) {
             return INVALID_NAME;
         }
     }
 
-    //marks must b between 1 to 100
-    if (marks1 > 100 || marks2 > 100 || marks3 > 100 ||
-    marks1 < 0 || marks2 < 0 || marks3 < 0){
+    // Marks must be between 0 and 100
+    if (new_student.subject1_marks > 100 || new_student.subject2_marks > 100 || new_student.subject3_marks > 100) {
         return INVALID_MARKS;
     }
+
     return SUCCESS;
 }
+
 //function to calculate total marks 
-int total_marks(struct students_data student){
-    return student.Subject1_marks + student.Subject2_marks + student.Subject3_marks;
+int total_marks(const struct students_data *student)
+{
+    return student->subject1_marks + student->subject2_marks + student->subject3_marks;
 }
+
+
 //function to calculate average marks
-float average_marks(struct students_data student){
+float average_marks(const struct students_data *student){
     return (total_marks(student)/300.0)*100;
 }
 //function to calculate grade
-char grade(struct students_data student){
+char grade(const struct students_data *student){
     float avg = average_marks(student);
     if(avg>=85) return 'A';
     else if(avg>=70) return 'B';
     else if(avg>=50) return 'C';
     else if(avg>=35) return 'D';
-    else if(avg<35) return 'F';
-    else return 'X'; //error case;
+    else return 'F';
+    
 }
 //function to display stars on the based of grade they got
-void student_performance(struct students_data student){
+void student_performance(const struct students_data *student){
     char grade_obtained = grade(student);
     int stars =0;
     switch (grade_obtained) {
@@ -93,7 +93,8 @@ void student_performance(struct students_data student){
 }
     
 
-int main(){
+ErrorCode main(){
+
     unsigned short number_of_students;
     char line[256];  // buffer to hold input line
     //make sure number of students is between 1 to 100
@@ -101,7 +102,7 @@ int main(){
         printf("How many students are there ?");
         fgets(line, sizeof(line), stdin);
         sscanf(line, "%hu", &number_of_students);
-        if(number_of_students<0 || number_of_students>100){
+        if(number_of_students>100){
             printf("Invalid input. Please enter a number between 1 and 100.\n");
             continue;
         }
@@ -112,22 +113,34 @@ int main(){
     }
 
     struct students_data *student_array = malloc(number_of_students * sizeof(struct students_data));
+    if (student_array == NULL) {
+       printf("Memory allocation failed! Exiting program.\n");
+       return MEMORY_ALLOCATION_FAILED;  
+    }
+
 
 
     for (int i = 0; i < number_of_students; i++) {
-        char roll_str[20];
-        char temp_name[100];
-        unsigned short temp_marks1, temp_marks2, temp_marks3;
+        struct students_data temp_student;
         ErrorCode err;
 
         while (1) { 
         printf("\nEnter student %d details:\n", i + 1);
         printf("[Roll number] [Name] [Marks1] [Marks2] [Marks3]: ");
         fgets(line, sizeof(line), stdin);
-        sscanf(line, "%s %s %hu %hu %hu",roll_str, temp_name, &temp_marks1, &temp_marks2, &temp_marks3);
-        
+        int parsed = sscanf(line, "%hu %s %hu %hu %hu",
+                        &temp_student.roll_number,
+                        temp_student.name,
+                        &temp_student.subject1_marks,
+                        &temp_student.subject2_marks,
+                        &temp_student.subject3_marks);
+        if (parsed != 5) {
+            printf("Invalid input format! Please re-enter.\n");
+            continue;
+        }
+
         // Validate the input
-        err = validate_user_input(student_array, i,roll_str, temp_name, temp_marks1, temp_marks2, temp_marks3);
+        err = validate_user_input(student_array, i, temp_student);
         if (err != SUCCESS) {
             switch (err) {
                 case INVALID_ROLL_NUMBER:
@@ -149,13 +162,8 @@ int main(){
         }
 
         //If validation passes, store data and break loop
-        unsigned short roll = (unsigned short)atoi(roll_str);
-        student_array[i].roll_number = roll;
-        strcpy(student_array[i].name, temp_name);
-        student_array[i].Subject1_marks = temp_marks1;
-        student_array[i].Subject2_marks = temp_marks2;
-        student_array[i].Subject3_marks = temp_marks3;
-        break;
+       student_array[i] = temp_student;
+       break;
     }
 
     }
@@ -175,9 +183,13 @@ int main(){
         struct students_data student = student_array[i];
         printf("\nRoll No: %hu \nName: %s\n", student.roll_number, student.name);
         printf("Total Marks: %d \nAverage: %.2f \nGrade: %c\n",
-               total_marks(student), average_marks(student), grade(student));
+               total_marks(&student), average_marks(&student), grade(&student));
+        float avg = average_marks(&student);
+        if (avg < 35) {
+           continue;
+        }
         printf("Performance: ");
-        student_performance(student);
+        student_performance(&student);
     }
     printf("\n\n List of Roll Numbers: ");
     for(int i=0;i<number_of_students;i++){
@@ -185,5 +197,7 @@ int main(){
         printf("%hu ", student.roll_number);
 
     }
-    return 0;
+    free(student_array);
+    return SUCCESS;
+
 }
