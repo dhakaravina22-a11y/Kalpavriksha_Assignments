@@ -17,21 +17,22 @@ void swap(unsigned short *a, unsigned short *b) {
 }
 
 
-void rotateMatrix(int n, unsigned short **matrix) {
-    // Transpose
-    for (int i = 0; i < n; i++) {
-        for (int j = i + 1; j < n; j++) {
-            swap(&matrix[i][j], &matrix[j][i]);
+void rotateMatrix(int n, unsigned short *matrix) {
+    for (int i = 0; i < n; i++) { 
+        for (int j = i + 1; j < n; j++) { 
+            unsigned short *p1 = matrix + i * n + j;
+            unsigned short *p2 = matrix + j * n + i;
+            swap(p1, p2);
         }
-    }
-    // Reverse rows
+    }  
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n / 2; j++) {
-            swap(&matrix[i][j], &matrix[i][n - j - 1]);
+            unsigned short *p1 = matrix + i * n + j;
+            unsigned short *p2 = matrix + i * n + (n - j - 1);
+            swap(p1, p2);
         }
     }
 }
-
 
 void soothing(int n, unsigned short **matrix) {
     int dx[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
@@ -79,11 +80,11 @@ InputStatus readMatrixSize(unsigned short *n) {
 }
 
 
-void printMatrix(int n, unsigned short **matrix, const char *message) {
+void printMatrix(int n, unsigned short *matrix, const char *message) {
     printf("\n%s\n", message);
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            printf("%3hu ", matrix[i][j]);
+            printf("%3hu ", *(matrix + i * n + j));
         }
         printf("\n");
     }
@@ -100,18 +101,21 @@ int main() {
     } while (status != INPUT_VALID);
 
     // Dynamically allocate 2D array
-    unsigned short **matrix = malloc(n * sizeof(unsigned short *));
-    for (int i = 0; i < n; i++)
-        matrix[i] = malloc(n * sizeof(unsigned short));
+    unsigned short *matrix = malloc(n * n * sizeof(unsigned short));
+    if (!matrix) {
+        printf("Memory allocation is  failed!\n");
+        return 1;
+    }
+
 
     srand(time(0));
 
    
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < n; j++) {
-            matrix[i][j] = rand() % 256;
-        }
+    for (int i = 0; i < n * n; i++){
+        *(matrix + i) = rand() % 256;
     }
+
+
 
     printMatrix(n, matrix, "Original Randomly Generated Matrix:");
     rotateMatrix(n, matrix);
@@ -119,9 +123,6 @@ int main() {
     soothing(n, matrix);
     printMatrix(n, matrix, "Matrix after Applying 3 * 3 Smoothing Filter:");
 
-    // Free memory
-    for (int i = 0; i < n; i++)
-        free(matrix[i]);
     free(matrix);
 
     return 0;
