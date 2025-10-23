@@ -34,14 +34,14 @@ void rotateMatrix(int n, unsigned short *matrix) {
     }
 }
 
-void soothing(int n, unsigned short **matrix) {
+void smoothing(int n, unsigned short *matrix) {
     int dx[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
     int dy[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
 
     
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            unsigned short *curr = *matrix + i * n + j;
+            unsigned short *curr = matrix + i * n + j;
             int sum = *curr & 0xFF;
             int count = 1;
 
@@ -49,25 +49,26 @@ void soothing(int n, unsigned short **matrix) {
                 int ni = i + dx[k];
                 int nj = j + dy[k];
                 if (ni >= 0 && ni < n && nj >= 0 && nj < n) {
-                    unsigned short *neighbor = *matrix + ni * n + nj;
+                    unsigned short *neighbor = matrix + ni * n + nj;
                     sum += *neighbor & 0xFF;
                     count++;
                 }
             }
 
             int avg = sum / count;
-            *curr |= (avg << 8); 
+            *curr |= (avg << 8);
         }
     }
 
     
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            unsigned short *curr = *matrix + i * n + j;
+            unsigned short *curr = matrix + i * n + j;
             *curr >>= 8;
         }
     }
 }
+
 
 
 InputStatus readMatrixSize(unsigned short *n) {
@@ -120,7 +121,7 @@ int main() {
     printMatrix(n, matrix, "Original Randomly Generated Matrix:");
     rotateMatrix(n, matrix);
     printMatrix(n, matrix, "Matrix after 90 degree Clockwise Rotation:");
-    soothing(n, matrix);
+    smoothing(n, matrix);
     printMatrix(n, matrix, "Matrix after Applying 3 * 3 Smoothing Filter:");
 
     free(matrix);
