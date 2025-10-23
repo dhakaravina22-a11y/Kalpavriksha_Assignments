@@ -9,13 +9,15 @@ typedef enum {
     INPUT_INVALID
 } InputStatus;
 
-void swap(int *a, int *b) {
-    int temp = *a;
+
+void swap(unsigned short *a, unsigned short *b) {
+    unsigned short temp = *a;
     *a = *b;
     *b = temp;
 }
 
-void rotateMatrix(int n, int **matrix) {
+
+void rotateMatrix(int n, unsigned short **matrix) {
     // Transpose
     for (int i = 0; i < n; i++) {
         for (int j = i + 1; j < n; j++) {
@@ -30,14 +32,15 @@ void rotateMatrix(int n, int **matrix) {
     }
 }
 
-void soothing(int n, int **matrix) {
+
+void soothing(int n, unsigned short **matrix) {
     int dx[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
     int dy[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
 
     
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            int *curr = *matrix + i * n + j;
+            unsigned short *curr = *matrix + i * n + j;
             int sum = *curr & 0xFF;
             int count = 1;
 
@@ -45,8 +48,8 @@ void soothing(int n, int **matrix) {
                 int ni = i + dx[k];
                 int nj = j + dy[k];
                 if (ni >= 0 && ni < n && nj >= 0 && nj < n) {
-                    int *neighbor = *matrix + ni * n + nj;
-                    sum += *neighbor & 0xFF; 
+                    unsigned short *neighbor = *matrix + ni * n + nj;
+                    sum += *neighbor & 0xFF;
                     count++;
                 }
             }
@@ -59,8 +62,8 @@ void soothing(int n, int **matrix) {
     
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            int *curr = *matrix + i * n + j;
-            *curr >>= 8; 
+            unsigned short *curr = *matrix + i * n + j;
+            *curr >>= 8;
         }
     }
 }
@@ -74,20 +77,22 @@ InputStatus readMatrixSize(unsigned short *n) {
     }
     return INPUT_VALID;
 }
-void printMatrix(int n, int **matrix, const char *message) {
+
+
+void printMatrix(int n, unsigned short **matrix, const char *message) {
     printf("\n%s\n", message);
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            printf("%3d ", matrix[i][j]);
+            printf("%3hu ", matrix[i][j]);
         }
         printf("\n");
     }
 }
 
-
 int main() {
     unsigned short n;
     InputStatus status;
+
     do {
         status = readMatrixSize(&n);
         if (status == INPUT_INVALID)
@@ -95,25 +100,26 @@ int main() {
     } while (status != INPUT_VALID);
 
     // Dynamically allocate 2D array
-    int **matrix = malloc(n * sizeof(int*));
+    unsigned short **matrix = malloc(n * sizeof(unsigned short *));
     for (int i = 0; i < n; i++)
-        matrix[i] = malloc(n * sizeof(int));
+        matrix[i] = malloc(n * sizeof(unsigned short));
 
     srand(time(0));
-    
+
+   
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
-            matrix[i][j] = rand() % 256; 
+            matrix[i][j] = rand() % 256;
         }
     }
-
 
     printMatrix(n, matrix, "Original Randomly Generated Matrix:");
     rotateMatrix(n, matrix);
     printMatrix(n, matrix, "Matrix after 90 degree Clockwise Rotation:");
     soothing(n, matrix);
-    printMatrix(n, matrix, "Matrix after Applying 3 * 3 Soothing Filter:");
+    printMatrix(n, matrix, "Matrix after Applying 3 * 3 Smoothing Filter:");
 
+    // Free memory
     for (int i = 0; i < n; i++)
         free(matrix[i]);
     free(matrix);
