@@ -211,7 +211,6 @@ StatusCode updateProductQuantity(unsigned short *id, unsigned int *quantity,
     printf("Product with ID %hu not found.\n", productId);
     return STATUS_NOT_FOUND;
 }
-
 StatusCode searchByProductId(unsigned short *id, char (*name)[NAME_LEN],
                              float *price, unsigned int *quantity,
                              unsigned int totalProducts, unsigned short searchId) {
