@@ -9,14 +9,14 @@
 #define MAX_PRODUCTS 100
 #define LINEBUFFER 256
 
-typedef enum {
-    STATUS_SUCCESS = 0,
-    STATUS_FAILURE = -1,
-    STATUS_NOT_FOUND = 1,
-    STATUS_INVALID_INPUT = 2
-} StatusCode;
+typedef struct {
+    unsigned short id;
+    char name[NAME_LEN];
+    float price;
+    unsigned int quantity;
+} Product;
 
-// functions to validate use input 
+
 static void trim_newline(char *s) {
     size_t n = strlen(s);
     if (n > 0 && s[n - 1] == '\n') s[n - 1] = '\0';
@@ -46,7 +46,7 @@ unsigned short read_ushort_range(const char *prompt, unsigned short minv, unsign
         }
         while (isspace((unsigned char)*endp)) endp++;
         if (*endp != '\0') {
-            printf("Trailing characters ignored. Try again.\n");
+            printf("Invalid input. Try again.\n");
             continue;
         }
         if (val < minv || val > maxv) {
@@ -73,7 +73,7 @@ unsigned int read_uint_range(const char *prompt, unsigned int minv, unsigned int
         }
         while (isspace((unsigned char)*endp)) endp++;
         if (*endp != '\0') {
-            printf("Trailing characters ignored. Try again.\n");
+            printf("Invalid input. Try again.\n");
             continue;
         }
         if (val < minv || val > maxv) {
@@ -100,7 +100,7 @@ float read_float_range(const char *prompt, float minv, float maxv) {
         }
         while (isspace((unsigned char)*endp)) endp++;
         if (*endp != '\0') {
-            printf("Trailing characters ignored. Try again.\n");
+            printf("Invalid input. Try again.\n");
             continue;
         }
         if (val < minv || val > maxv) {
@@ -117,10 +117,8 @@ void read_string(const char *prompt, char *out, size_t maxlen) {
         printf("%s", prompt);
         if (!fgets(line, sizeof(line), stdin)) { clearerr(stdin); continue; }
         trim_newline(line);
-
         char *ptr = line;
         while (*ptr && isspace((unsigned char)*ptr)) ptr++;
-
         if (*ptr == '\0') {
             printf("Input cannot be empty. Try again.\n");
             continue;
@@ -134,59 +132,52 @@ void read_string(const char *prompt, char *out, size_t maxlen) {
     }
 }
 
-//add new product
-StatusCode addNewProduct(unsigned short **id, char (**name)[NAME_LEN],
-                         float **price, unsigned int **quantity, unsigned int *totalProducts) {
+
+void addNewProduct(Product **products, unsigned int *totalProducts) {
     if (*totalProducts >= MAX_PRODUCTS) {
         printf("Cannot add more than %d products.\n", MAX_PRODUCTS);
-        return STATUS_FAILURE;
+        return;
     }
 
-    unsigned int newTotal = *totalProducts + 1;
-    *id = realloc(*id, newTotal * sizeof(unsigned short));
-    *name = realloc(*name, newTotal * sizeof(**name));
-    *price = realloc(*price, newTotal * sizeof(float));
-    *quantity = realloc(*quantity, newTotal * sizeof(unsigned int));
-
-    if (!*id || !*name || !*price || !*quantity) {
-        fprintf(stderr, "Memory reallocation failed.\n");
-        return STATUS_FAILURE;
-    }
-
+    Product newProduct;
     printf("\nEnter details for new product:\n");
 
-    unsigned short tmpId;
     while (1) {
-        tmpId = read_ushort_range("Enter Product ID: ", 1, 10000);
+        newProduct.id = read_ushort_range("Enter Product ID: ", 1, 10000);
         bool duplicate = false;
         for (unsigned int i = 0; i < *totalProducts; i++) {
-            if ((*id)[i] == tmpId) {
-                printf("Product ID %hu already exists. Try again.\n", tmpId);
+            if ((*products)[i].id == newProduct.id) {
+                printf("Product ID already exists. Try again.\n");
                 duplicate = true;
                 break;
             }
         }
         if (!duplicate) break;
     }
-    (*id)[newTotal - 1] = tmpId;
 
     while (1) {
-        read_string("Enter Product Name: ", (*name)[newTotal - 1], NAME_LEN - 1);
-        if (is_name_valid((*name)[newTotal - 1])) break;
+        read_string("Enter Product Name: ", newProduct.name, NAME_LEN - 1);
+        if (is_name_valid(newProduct.name)) break;
         printf("Invalid name: must contain letters.\n");
     }
 
-    (*price)[newTotal - 1] = read_float_range("Enter Product Price: ", 0.0f, 100000.0f);
-    (*quantity)[newTotal - 1] = read_uint_range("Enter Product Quantity: ", 0, 1000000);
+    newProduct.price = read_float_range("Enter Product Price: ", 0.0f, 100000.0f);
+    newProduct.quantity = read_uint_range("Enter Product Quantity: ", 0, 1000000);
 
-    *totalProducts = newTotal;
+    Product *temp = realloc(*products, (*totalProducts + 1) * sizeof(Product));
+    if (!temp) {
+        printf("Memory reallocation failed.\n");
+        return;
+    }
+
+    *products = temp;
+    (*products)[*totalProducts] = newProduct;
+    (*totalProducts)++;
+
     printf("Product added successfully!\n");
-    return STATUS_SUCCESS;
 }
 
-//print all products
-void printAllProducts(unsigned short *id, char (*name)[NAME_LEN],
-                      float *price, unsigned int *quantity, unsigned int totalProducts) {
+void printAllProducts(Product *products, unsigned int totalProducts) {
     if (totalProducts == 0) {
         printf("No products to show.\n");
         return;
@@ -194,145 +185,119 @@ void printAllProducts(unsigned short *id, char (*name)[NAME_LEN],
     printf("\n========= PRODUCT LIST =========\n");
     for (unsigned int i = 0; i < totalProducts; i++) {
         printf("ID:%hu | Name:%s | Price:%.2f | Quantity:%u\n",
-               id[i], name[i], price[i], quantity[i]);
+               products[i].id, products[i].name, products[i].price, products[i].quantity);
     }
 }
 
-// update product quantity - will take id from user and will take new quanity 
-StatusCode updateProductQuantity(unsigned short *id, unsigned int *quantity,
-                                 unsigned int totalProducts, unsigned short productId, unsigned int newQuantity) {
+void updateProductQuantity(Product *products, unsigned int totalProducts,
+                           unsigned short productId, unsigned int newQuantity) {
     for (unsigned int i = 0; i < totalProducts; i++) {
-        if (id[i] == productId) {
-            quantity[i] = newQuantity;
+        if (products[i].id == productId) {
+            products[i].quantity = newQuantity;
             printf("Quantity updated successfully!\n");
-            return STATUS_SUCCESS;
+            return;
         }
     }
     printf("Product with ID %hu not found.\n", productId);
-    return STATUS_NOT_FOUND;
 }
-StatusCode searchByProductId(unsigned short *id, char (*name)[NAME_LEN],
-                             float *price, unsigned int *quantity,
-                             unsigned int totalProducts, unsigned short searchId) {
+
+void searchByProductId(Product *products, unsigned int totalProducts, unsigned short searchId) {
     for (unsigned int i = 0; i < totalProducts; i++) {
-        if (id[i] == searchId) {
+        if (products[i].id == searchId) {
             printf("Product Found: ID:%hu | Name:%s | Price:%.2f | Quantity:%u\n",
-                   id[i], name[i], price[i], quantity[i]);
-            return STATUS_SUCCESS;
+                   products[i].id, products[i].name, products[i].price, products[i].quantity);
+            return;
         }
     }
     printf("Product with ID %hu not found.\n", searchId);
-    return STATUS_NOT_FOUND;
 }
 
-StatusCode searchByProductName(unsigned short *id, char (*name)[NAME_LEN],
-                               float *price, unsigned int *quantity,
-                               unsigned int totalProducts, const char *partialName) {
+void searchByProductName(Product *products, unsigned int totalProducts, const char *partialName) {
     bool found = false;
     printf("\nProducts Found:\n");
     for (unsigned int i = 0; i < totalProducts; i++) {
-        if (strstr(name[i], partialName)) {
-            printf("Product ID:%hu | Name:%s | Price:%.2f | Quantity:%u\n",
-                   id[i], name[i], price[i], quantity[i]);
+        if (strstr(products[i].name, partialName)) {
+            printf("ID:%hu | Name:%s | Price:%.2f | Quantity:%u\n",
+                   products[i].id, products[i].name, products[i].price, products[i].quantity);
             found = true;
         }
     }
-    if (!found) {
+    if (!found)
         printf("No products found containing \"%s\".\n", partialName);
-        return STATUS_NOT_FOUND;
-    }
-    return STATUS_SUCCESS;
 }
 
-StatusCode searchByPriceRange(unsigned short *id, char (*name)[NAME_LEN],
-                              float *price, unsigned int *quantity,
-                              unsigned int totalProducts, float minPrice, float maxPrice) {
+void searchByPriceRange(Product *products, unsigned int totalProducts, float minPrice, float maxPrice) {
     bool found = false;
     printf("\nProducts in price range %.2f - %.2f:\n", minPrice, maxPrice);
     for (unsigned int i = 0; i < totalProducts; i++) {
-        if (price[i] >= minPrice && price[i] <= maxPrice) {
-            printf("Product ID:%hu | Name:%s | Price:%.2f | Quantity:%u\n",
-                   id[i], name[i], price[i], quantity[i]);
+        if (products[i].price >= minPrice && products[i].price <= maxPrice) {
+            printf("ID:%hu | Name:%s | Price:%.2f | Quantity:%u\n",
+                   products[i].id, products[i].name, products[i].price, products[i].quantity);
             found = true;
         }
     }
-    if (!found) {
+    if (!found)
         printf("No products found in that range.\n");
-        return STATUS_NOT_FOUND;
-    }
-    return STATUS_SUCCESS;
 }
 
-
-StatusCode deleteProduct(unsigned short **id, char (**name)[NAME_LEN],
-                         float **price, unsigned int **quantity,
-                         unsigned int *totalProducts, unsigned short productId) {
+void deleteProduct(Product **products, unsigned int *totalProducts, unsigned short productId) {
     int idx = -1;
     for (unsigned int i = 0; i < *totalProducts; i++) {
-        if ((*id)[i] == productId) { idx = i; break; }
+        if ((*products)[i].id == productId) { idx = i; break; }
     }
     if (idx == -1) {
         printf("Product with ID %hu not found.\n", productId);
-        return STATUS_NOT_FOUND;
+        return;
     }
 
     for (unsigned int i = idx; i < *totalProducts - 1; i++) {
-        (*id)[i] = (*id)[i + 1];
-        strcpy((*name)[i], (*name)[i + 1]);
-        (*price)[i] = (*price)[i + 1];
-        (*quantity)[i] = (*quantity)[i + 1];
+        (*products)[i] = (*products)[i + 1];
     }
 
+    Product *temp = realloc(*products, (*totalProducts - 1) * sizeof(Product));
+    if (!temp && *totalProducts > 1) {
+        printf("Memory reallocation failed.\n");
+        return;
+    }
+
+    *products = temp;
     (*totalProducts)--;
-    *id = realloc(*id, (*totalProducts) * sizeof(unsigned short));
-    *name = realloc(*name, (*totalProducts) * sizeof(**name));
-    *price = realloc(*price, (*totalProducts) * sizeof(float));
-    *quantity = realloc(*quantity, (*totalProducts) * sizeof(unsigned int));
 
     printf("Product with ID %hu deleted successfully!\n", productId);
-    return STATUS_SUCCESS;
 }
 
-// main function
+// Main function
+int main() {
+    printf("===== Dynamic Inventory Management System=====\n");
 
-int main(void) {
-    printf("===== Dynamic Inventory Management System =====\n");
-
-    unsigned int initialQuantity = read_uint_range("Enter the initial number of products: ", 1, 100);
-    unsigned int totalProducts = initialQuantity;
-
-    unsigned short *id = calloc(initialQuantity, sizeof(unsigned short));
-    char (*name)[NAME_LEN] = calloc(initialQuantity, sizeof(*name));
-    float *price = calloc(initialQuantity, sizeof(float));
-    unsigned int *quantity = calloc(initialQuantity, sizeof(unsigned int));
-
-    if (!id || !name || !price || !quantity) {
+    unsigned int totalProducts = read_uint_range("Enter the initial number of products: ", 1, 100);
+    Product *products = calloc(totalProducts, sizeof(Product));
+    if (!products) {
         fprintf(stderr, "Memory allocation failed.\n");
-        free(id); free(name); free(price); free(quantity);
         return EXIT_FAILURE;
     }
 
-    for (unsigned int i = 0; i < initialQuantity; i++) {
+    for (unsigned int i = 0; i < totalProducts; i++) {
         printf("\nEnter details for product %u\n", i + 1);
 
         while (1) {
-            id[i] = read_ushort_range("Enter Product ID: ", 1, 10000);
+            products[i].id = read_ushort_range("Enter Product ID: ", 1, 10000);
             bool duplicate = false;
             for (unsigned int j = 0; j < i; j++) {
-                if (id[j] == id[i]) { duplicate = true; break; }
+                if (products[j].id == products[i].id) { duplicate = true; break; }
             }
             if (!duplicate) break;
             printf("Product ID already exists. Try again.\n");
         }
 
         while (1) {
-            read_string("Enter Product Name: ", name[i], NAME_LEN - 1);
-            if (is_name_valid(name[i])) break;
-            printf("Invalid name: must contain at least one alphabetic letter.\n");
+            read_string("Enter Product Name: ", products[i].name, NAME_LEN - 1);
+            if (is_name_valid(products[i].name)) break;
+            printf("Invalid name: must contain letters.\n");
         }
 
-        price[i] = read_float_range("Enter Product Price: ", 0.0f, 100000.0f);
-        quantity[i] = read_uint_range("Enter Product Quantity: ", 0, 1000000);
+        products[i].price = read_float_range("Enter Product Price: ", 0.0f, 100000.0f);
+        products[i].quantity = read_uint_range("Enter Product Quantity: ", 0, 1000000);
     }
 
     while (true) {
@@ -348,54 +313,49 @@ int main(void) {
 
         unsigned short choice = read_ushort_range("Enter your choice: ", 1, 8);
         if (choice == 8) {
-            printf("Exiting program and freeing memory...\n");
+            printf("Exiting program..\n");
             break;
         }
 
         switch (choice) {
             case 1:
-                addNewProduct(&id, &name, &price, &quantity, &totalProducts);
+                addNewProduct(&products, &totalProducts);
                 break;
             case 2:
-                printAllProducts(id, name, price, quantity, totalProducts);
+                printAllProducts(products, totalProducts);
                 break;
             case 3: {
                 unsigned short pid = read_ushort_range("Enter Product ID: ", 1, 10000);
                 unsigned int newQ = read_uint_range("Enter New Quantity: ", 0, 1000000);
-                updateProductQuantity(id, quantity, totalProducts, pid, newQ);
+                updateProductQuantity(products, totalProducts, pid, newQ);
                 break;
             }
             case 4: {
-                unsigned short pid = read_ushort_range("Enter Product ID to search: ", 1, 10000);                searchByProductId(id, name, price, quantity, totalProducts, pid);
+                unsigned short pid = read_ushort_range("Enter Product ID to search: ", 1, 10000);
+                searchByProductId(products, totalProducts, pid);
                 break;
             }
-
             case 5: {
                 char partial[NAME_LEN];
                 read_string("Enter name to search (partial allowed): ", partial, NAME_LEN - 1);
-                searchByProductName(id, name, price, quantity, totalProducts, partial);
+                searchByProductName(products, totalProducts, partial);
                 break;
             }
             case 6: {
                 float minP = read_float_range("Enter minimum price: ", 0.0f, 100000.0f);
                 float maxP = read_float_range("Enter maximum price: ", 0.0f, 100000.0f);
                 if (minP > maxP) { float tmp = minP; minP = maxP; maxP = tmp; }
-                searchByPriceRange(id, name, price, quantity, totalProducts, minP, maxP);
+                searchByPriceRange(products, totalProducts, minP, maxP);
                 break;
             }
-
             case 7: {
                 unsigned short pid = read_ushort_range("Enter Product ID to delete: ", 1, 10000);
-                deleteProduct(&id, &name, &price, &quantity, &totalProducts, pid);
+                deleteProduct(&products, &totalProducts, pid);
                 break;
             }
         }
     }
 
-    free(id);
-    free(name);
-    free(price);
-    free(quantity);
-
+    free(products);
     return 0;
 }
