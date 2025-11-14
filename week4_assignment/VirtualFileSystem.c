@@ -307,13 +307,22 @@ void cmd_ls() {
     } while (t != start);
 }
 
+static void printPathRecursive(FileNode *n) {
+    if (!n || n == file.root) return;
+    printPathRecursive(n->parent);
+    printf("/%s", n->name);
+}
+
 void cmd_cd(const char *name) {
     if (!name || name[0] == '\0') { printf("cd: missing name\n"); return; }
     if (strcmp(name, "..") == 0) {
-        if (file.cwd->parent) file.cwd = file.cwd->parent;
-        if (file.cwd == file.root) printf("Moved to /\n");
-        else printf("Moved to %s\n", file.cwd->name);
-        return;
+    if (file.cwd->parent) file.cwd = file.cwd->parent;
+
+    printf("Moved to ");
+    if (file.cwd == file.root) printf("/");
+    else printPathRecursive(file.cwd);
+    printf("\n");
+    return;
     }
     FileNode *target = findChild(file.cwd, name);
     if (!target || !target->isDirectory) {
@@ -321,49 +330,20 @@ void cmd_cd(const char *name) {
         return;
     }
     file.cwd = target;
-    if (file.cwd == file.root) printf("Moved to /\n");
-    else {
-        char full[1024] = "";
-        char *parts[256];
-        int pc = 0;
-        FileNode *t = file.cwd;
-        while (t && t != file.root && pc < 256) {
-            parts[pc++] = t->name;
-            t = t->parent;
-        }
-        for (int i = pc - 1; i >= 0; --i) {
-            strcat(full, "/");
-            strcat(full, parts[i]);
-        }
-        printf("Moved to %s\n", full);
-    }
+    printf("Moved to ");
+    if (file.cwd == file.root) printf("/");
+    else printPathRecursive(file.cwd);
+    printf("\n");
 }
 
 void cmd_pwd() {
-    FileNode *t = file.cwd;
-    if (t == file.root) { printf("/\n"); return; }
-    char full[1024] = "";
-    char *parts[256];
-    int pc = 0;
-    while (t && t != file.root && pc < 256) {
-        parts[pc++] = t->name;
-        t = t->parent;
+    if (file.cwd == file.root) {
+        printf("/\n");
+        return;
     }
-    for (int i = pc - 1; i >= 0; --i) {
-        strcat(full, "/");
-        strcat(full, parts[i]);
-    }
-    strcat(full, "\n");
-    printf("%s", full);
+    printPathRecursive(file.cwd);
+    printf("\n");
 }
-
-static FileNode* findFileInCwd(const char *name) {
-    FileNode *n = findChild(file.cwd, name);
-    if (!n) return NULL;
-    if (n->isDirectory) return NULL;
-    return n;
-}
-
 void cmd_write(const char *filename, const char *content) {
     if (!filename || filename[0] == '\0') { printf("write: missing filename\n"); return; }
     FileNode *fnode = findChild(file.cwd, filename);
