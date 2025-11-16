@@ -8,14 +8,14 @@
 
 #define MAX_NAME_LEN 50
 #define MAX_TEAM_NAME 50
+#define ROLE_COUNT 4
 
 typedef enum {
-    ROLE_UNKNOWN = 0, 
-    ROLE_BATSMAN = 1, 
-    ROLE_BOWLER = 2, 
-    ROLE_ALLROUNDER = 3 
+    ROLE_UNKNOWN = 0,
+    ROLE_BATSMAN = 1,
+    ROLE_BOWLER = 2,
+    ROLE_ALLROUNDER = 3
 } Role;
-
 
 typedef struct PlayerNode {
     int id;
@@ -31,16 +31,17 @@ typedef struct PlayerNode {
     struct PlayerNode *next;
 } PlayerNode;
 
-
 typedef struct {
-    int teamId; 
-    char name[MAX_TEAM_NAME];
+    int teamId;
+    char name[MAX_TEAM_NAME+1];
     int totalPlayers;
-    double avgBattingStrikeRate; 
-    PlayerNode *playersHead; 
-    PlayerNode **roleArrays[4];
-    int roleCounts[4];     
-    int roleCapacity[4];     
+    double sumBattingSR;
+    int batterCount;
+    double avgBattingStrikeRate;
+    PlayerNode *playersHead;                
+    PlayerNode **roleArrays[ROLE_COUNT];  
+    int roleCounts[ROLE_COUNT];
+    int roleCapacity[ROLE_COUNT];
 } Team;
 
 typedef struct {
@@ -49,26 +50,31 @@ typedef struct {
     int idxInArray;
 } HeapNode;
 
+static Team *teamsArr = NULL;
+static int gTeamCount = 0;
 
-static const char *roleName(int r) {
-    if (r == ROLE_BATSMAN) return "Batsman";
-    if (r == ROLE_BOWLER) return "Bowler";
-    if (r == ROLE_ALLROUNDER) return "All-rounder";
-    return "Unknown";
+static void scopy(char *dest, const char *src, size_t destSize) {
+    if (!dest || destSize == 0) return;
+    if (!src) { dest[0] = '\0'; return; }
+    strncpy(dest, src, destSize - 1);
+    dest[destSize - 1] = '\0';
 }
 
-
-static void scopy(char *dest, const char *src, int n) {
-    if (!src) { dest[0] = '\0'; return; }
-    strncpy(dest, src, n-1);
-    dest[n-1] = '\0';
+static const char *roleName(Role r) {
+    switch (r) {
+        case ROLE_BATSMAN: return "Batsman";
+        case ROLE_BOWLER: return "Bowler";
+        case ROLE_ALLROUNDER: return "All-rounder";
+        default: return "Unknown";
+    }
 }
 
 static Role role_from_string(const char *rstr) {
     if (!rstr) return ROLE_UNKNOWN;
     if (strcasecmp(rstr, "Batsman") == 0 || strcasecmp(rstr, "Batter") == 0) return ROLE_BATSMAN;
     if (strcasecmp(rstr, "Bowler") == 0) return ROLE_BOWLER;
-    if (strcasecmp(rstr, "All-rounder") == 0 || strcasecmp(rstr, "Allrounder") == 0 || strcasecmp(rstr, "All rounder")==0) return ROLE_ALLROUNDER;
+    if (strcasecmp(rstr, "All-rounder") == 0 || strcasecmp(rstr, "Allrounder") == 0 ||
+        strcasecmp(rstr, "All rounder") == 0) return ROLE_ALLROUNDER;
     return ROLE_UNKNOWN;
 }
 
@@ -83,31 +89,40 @@ static double compute_perf_index(const PlayerNode *p) {
     }
     return 0.0;
 }
+int read_int(const char *prompt) {
+    char buffer[128];
+    if (prompt) printf("%s", prompt);
+    if (!fgets(buffer, sizeof(buffer), stdin))
+        return -1;
 
+    char *end;
+    long val = strtol(buffer, &end, 10);
+    while (isspace((unsigned char)*end)) end++;
+    if (end == buffer || *end != '\0') return -1;  
+    return (int)val;
+}
 
-static Team *teamsArr = NULL; 
-static int gTeamCount = 0;
+double read_double(const char *prompt) {
+    char buffer[128];
+    if (prompt) printf("%s", prompt);
+    if (!fgets(buffer, sizeof(buffer), stdin))
+        return NAN;
 
-static void init_teams_from_header() {
-    gTeamCount = teamCount;
-    teamsArr = (Team*) malloc(sizeof(Team) * gTeamCount);
-    if (!teamsArr) {
-        perror("malloc teamsArr");
-        exit(EXIT_FAILURE);
+    char *end;
+    double val = strtod(buffer, &end);
+    while (isspace((unsigned char)*end)) end++;
+    if (end == buffer || *end != '\0') return NAN; 
+    return val;
+}
+
+void read_line(char *buf, int n, const char *prompt) {
+    if (prompt) printf("%s", prompt);
+
+    if (!fgets(buf, n, stdin)) {
+        buf[0] = '\0';
+        return;
     }
-    for (int i = 0; i < gTeamCount; ++i) {
-        teamsArr[i].teamId = i + 1; 
-        scopy(teamsArr[i].name, teams[i], MAX_TEAM_NAME);
-        teamsArr[i].totalPlayers = 0;
-        teamsArr[i].avgBattingStrikeRate = 0.0;
-        teamsArr[i].playersHead = NULL;
-        for (int r = 0; r < 4; ++r) {
-            teamsArr[i].roleArrays[r] = NULL;
-            teamsArr[i].roleCounts[r] = 0;
-            teamsArr[i].roleCapacity[r] = 0;
-        }
-    }
-    
+    buf[strcspn(buf, "\n")] = '\0';
 }
 
 static int find_team_index_by_id(int teamId) {
@@ -122,10 +137,25 @@ static int find_team_index_by_id(int teamId) {
 }
 
 static int find_team_index_by_name(const char *tname) {
+    if (!tname) return -1;
     for (int i = 0; i < gTeamCount; ++i) {
         if (strcasecmp(teamsArr[i].name, tname) == 0) return i;
     }
     return -1;
+}
+
+static int get_valid_team_index(void) {
+    int tid = read_int("Enter Team ID: ");
+    if (tid == -1) {
+        printf("Invalid team id input.\n");
+        return -1;
+    }
+    int idx = find_team_index_by_id(tid);
+    if (idx < 0) {
+        printf("Team ID %d not found.\n", tid);
+        return -1;
+    }
+    return idx;
 }
 
 static int is_player_id_present(int pid) {
@@ -140,6 +170,17 @@ static int is_player_id_present(int pid) {
     return 0;
 }
 
+static int ensure_unique_id(int pid) {
+    if (pid < 0) {
+        printf("Invalid player id.\n");
+        return 0;
+    }
+    if (is_player_id_present(pid)) {
+        printf("Player ID %d already exists.\n", pid);
+        return 0;
+    }
+    return 1;
+}
 
 static PlayerNode* create_player_node(int id, const char *name, const char *teamName,
                                       Role role, int runs, float avg, float sr,
@@ -147,8 +188,8 @@ static PlayerNode* create_player_node(int id, const char *name, const char *team
     PlayerNode *p = (PlayerNode*) malloc(sizeof(PlayerNode));
     if (!p) { perror("malloc PlayerNode"); exit(EXIT_FAILURE); }
     p->id = id;
-    scopy(p->name, name, MAX_NAME_LEN);
-    scopy(p->teamName, teamName, MAX_TEAM_NAME);
+    scopy(p->name, name, sizeof(p->name));
+    scopy(p->teamName, teamName, sizeof(p->teamName));
     p->role = role;
     p->totalRuns = runs;
     p->battingAverage = avg;
@@ -161,68 +202,76 @@ static PlayerNode* create_player_node(int id, const char *name, const char *team
 }
 
 static void ensure_role_capacity(Team *team, int role, int want) {
+    if (!team) return;
+    if (role < 0 || role >= ROLE_COUNT) return;
     if (team->roleCapacity[role] >= want) return;
     int newcap = team->roleCapacity[role] == 0 ? 8 : team->roleCapacity[role] * 2;
     while (newcap < want) newcap *= 2;
-    PlayerNode **tmp = (PlayerNode**) realloc(team->roleArrays[role], sizeof(PlayerNode*) * newcap);
-    if (!tmp) {
-        perror("realloc roleArrays");
-        exit(EXIT_FAILURE);
-    }
+    PlayerNode **tmp = (PlayerNode**) realloc(team->roleArrays[role], sizeof(PlayerNode*) * (size_t)newcap);
+    if (!tmp) { perror("realloc roleArrays"); exit(EXIT_FAILURE); }
     team->roleArrays[role] = tmp;
     team->roleCapacity[role] = newcap;
 }
-
-static void insert_into_role_array_sorted(Team *team, int role, PlayerNode *p) {
+static void insert_role_sorted(Team *team, int role, PlayerNode *p) {
+    if (!team || !p) return;
+    if (role < 0 || role >= ROLE_COUNT) return;
     int n = team->roleCounts[role];
-    ensure_role_capacity(team, role, n+1);
+    ensure_role_capacity(team, role, n + 1);
     int pos = 0;
     while (pos < n && team->roleArrays[role][pos]->perfIndex >= p->perfIndex) pos++;
-    
-    for (int i = n; i > pos; i--) {
-        team->roleArrays[role][i] = team->roleArrays[role][i-1];
-    }
+    for (int i = n; i > pos; --i) team->roleArrays[role][i] = team->roleArrays[role][i-1];
     team->roleArrays[role][pos] = p;
     team->roleCounts[role]++;
 }
 
-static void recompute_team_avg_sr(Team *team) {
-    double sum = 0.0;
-    int count = 0;
-    for (int r = 1; r <= 3; ++r) {
-        if (r == ROLE_BOWLER) continue;
-        for (int i = 0; i < team->roleCounts[r]; ++i) {
-            sum += team->roleArrays[r][i]->strikeRate;
-            count++;
-        }
-    }
-    if (count == 0) team->avgBattingStrikeRate = 0.0;
-    else team->avgBattingStrikeRate = sum / count;
+static void team_add_batting_sr(Team *team, float sr) {
+    if (!team) return;
+    team->sumBattingSR += sr;
+    team->batterCount += 1;
+    team->avgBattingStrikeRate = team->batterCount ? (team->sumBattingSR / team->batterCount) : 0.0;
 }
-
 static void add_player_to_team(Team *team, PlayerNode *p) {
+    if (!team || !p) return;
     p->next = team->playersHead;
     team->playersHead = p;
     team->totalPlayers++;
 
-    if (p->role >= ROLE_BATSMAN && p->role <= ROLE_ALLROUNDER) {
-        insert_into_role_array_sorted(team, p->role, p);
-    } else {
-        insert_into_role_array_sorted(team, ROLE_BATSMAN, p);
+    int r = (p->role >= ROLE_BATSMAN && p->role <= ROLE_ALLROUNDER) ? (int)p->role : ROLE_UNKNOWN;
+    insert_role_sorted(team, r, p);
+
+    if (p->role == ROLE_BATSMAN || p->role == ROLE_ALLROUNDER) {
+        team_add_batting_sr(team, p->strikeRate);
     }
-    recompute_team_avg_sr(team);
+}
+static void init_teams_from_header(void) {
+    gTeamCount = teamCount;
+    if (gTeamCount <= 0) { teamsArr = NULL; return; }
+    teamsArr = (Team*) malloc(sizeof(Team) * (size_t)gTeamCount);
+    if (!teamsArr) { perror("malloc teamsArr"); exit(EXIT_FAILURE); }
+    for (int i = 0; i < gTeamCount; ++i) {
+        teamsArr[i].teamId = i + 1;
+        scopy(teamsArr[i].name, teams[i], sizeof(teamsArr[i].name));
+        teamsArr[i].totalPlayers = 0;
+        teamsArr[i].sumBattingSR = 0.0;
+        teamsArr[i].batterCount = 0;
+        teamsArr[i].avgBattingStrikeRate = 0.0;
+        teamsArr[i].playersHead = NULL;
+        for (int r = 0; r < ROLE_COUNT; ++r) {
+            teamsArr[i].roleArrays[r] = NULL;
+            teamsArr[i].roleCounts[r] = 0;
+            teamsArr[i].roleCapacity[r] = 0;
+        }
+    }
 }
 
-static void init_players_from_header() {
+static void init_players_from_header(void) {
     for (int i = 0; i < playerCount; ++i) {
-        const Player *hp = &players[i]; 
+        const Player *hp = &players[i];
         Role r = role_from_string(hp->role);
-        
         if (is_player_id_present(hp->id)) {
             fprintf(stderr, "Warning: duplicate player id %d for player %s. Skipping.\n", hp->id, hp->name);
             continue;
         }
-        
         int tidx = find_team_index_by_name(hp->team);
         if (tidx < 0) {
             fprintf(stderr, "Warning: team '%s' for player %s not found. Skipping.\n", hp->team, hp->name);
@@ -234,17 +283,16 @@ static void init_players_from_header() {
         add_player_to_team(&teamsArr[tidx], p);
     }
 }
-
-
-
-static void print_player_columns_header(int showTeam) {
-    if (showTeam)
+static void print_players_header(int showTeam) {
+    if (showTeam) {
         printf("ID\tName\t\tTeam\t\tRole\t\tRuns\tAvg\tSR\tWkts\tER\tPerfIdx\n");
-    else
+    } else {
         printf("ID\tName\t\tRole\t\tRuns\tAvg\tSR\tWkts\tER\tPerfIdx\n");
+    }
 }
 
 static void print_player_row(const PlayerNode *p, int showTeam) {
+    if (!p) return;
     if (showTeam) {
         printf("%d\t%-15s\t%-12s\t%-12s\t%d\t%.1f\t%.1f\t%d\t%.1f\t%.2f\n",
                p->id, p->name, p->teamName, roleName(p->role),
@@ -257,32 +305,28 @@ static void print_player_row(const PlayerNode *p, int showTeam) {
                p->wickets, p->economyRate, p->perfIndex);
     }
 }
-
-
 static void display_team_players(const Team *team) {
+    if (!team) return;
     printf("\nPlayers of Team %s (ID %d):\n", team->name, team->teamId);
-    print_player_columns_header(0);
+    print_players_header(0);
     PlayerNode *cur = team->playersHead;
     while (cur) {
         print_player_row(cur, 0);
         cur = cur->next;
     }
     printf("Total Players: %d\n", team->totalPlayers);
-    printf("Average Batting Strike Rate: %.2f\n\n", team->avgBattingStrikeRate);
+    printf("Average Batting Strike Rate: %.2f\n", team->avgBattingStrikeRate);
 }
 
 static void display_top_k_players_of_team_by_role(const Team *team, Role role, int K) {
+    if (!team) return;
+    if (role < 0 || role >= ROLE_COUNT) { printf("Invalid role.\n"); return; }
     printf("\nTop %d %s of Team %s (ID %d):\n", K, roleName(role), team->name, team->teamId);
-    print_player_columns_header(0);
+    print_players_header(0);
     int n = team->roleCounts[role];
-    if (n == 0) {
-        printf("No players of role %s in this team.\n", roleName(role));
-        return;
-    }
-    int limit = K < n ? K : n;
-    for (int i = 0; i < limit; ++i) {
-        print_player_row(team->roleArrays[role][i], 0);
-    }
+    if (n == 0) { printf("No players of role %s in this team.\n", roleName(role)); return; }
+    int limit = (K < n) ? K : n;
+    for (int i = 0; i < limit; ++i) print_player_row(team->roleArrays[role][i], 0);
 }
 
 static int cmp_team_avg_sr_desc(const void *a, const void *b) {
@@ -293,9 +337,9 @@ static int cmp_team_avg_sr_desc(const void *a, const void *b) {
     return 0;
 }
 
-static void display_teams_sorted_by_avg_sr() {
-    // create array of pointers for sorting
-    Team **tmp = (Team**) malloc(sizeof(Team*) * gTeamCount);
+static void display_teams_sorted_by_avg_sr(void) {
+    if (gTeamCount <= 0) { printf("No teams available.\n"); return; }
+    Team **tmp = (Team**) malloc(sizeof(Team*) * (size_t)gTeamCount);
     if (!tmp) { perror("malloc tmp"); return; }
     for (int i = 0; i < gTeamCount; ++i) tmp[i] = &teamsArr[i];
     qsort(tmp, gTeamCount, sizeof(Team*), cmp_team_avg_sr_desc);
@@ -311,15 +355,7 @@ static void display_teams_sorted_by_avg_sr() {
 static void heap_swap(HeapNode *a, HeapNode *b) {
     HeapNode tmp = *a; *a = *b; *b = tmp;
 }
-static void heapify_up(HeapNode heap[], int idx) {
-    while (idx > 0) {
-        int parent = (idx - 1) / 2;
-        if (heap[parent].p->perfIndex < heap[idx].p->perfIndex) {
-            heap_swap(&heap[parent], &heap[idx]);
-            idx = parent;
-        } else break;
-    }
-}
+
 static void heapify_down(HeapNode heap[], int size, int idx) {
     while (1) {
         int l = 2*idx + 1, r = 2*idx + 2, largest = idx;
@@ -329,18 +365,10 @@ static void heapify_down(HeapNode heap[], int size, int idx) {
         else break;
     }
 }
-
-
-static void display_all_players_of_role_across_teams(Role role) {
-    int totalN = 0;
-    for (int i = 0; i < gTeamCount; ++i) totalN += teamsArr[i].roleCounts[role];
-    if (totalN == 0) {
-        printf("\nNo players of role %s across all teams.\n\n", roleName(role));
-        return;
-    }
-
-    HeapNode *heap = (HeapNode*) malloc(sizeof(HeapNode) * gTeamCount);
-    if (!heap) { perror("malloc heap"); return; }
+static HeapNode *build_role_heap(int role, int *outSize) {
+    if (role < 0 || role >= ROLE_COUNT) { *outSize = 0; return NULL; }
+    HeapNode *heap = (HeapNode*) malloc(sizeof(HeapNode) * (size_t)gTeamCount);
+    if (!heap) { *outSize = 0; return NULL; }
     int heapSize = 0;
     for (int i = 0; i < gTeamCount; ++i) {
         if (teamsArr[i].roleCounts[role] > 0) {
@@ -350,10 +378,25 @@ static void display_all_players_of_role_across_teams(Role role) {
             heapSize++;
         }
     }
-    for (int i = (heapSize/2)-1; i >=0; --i) heapify_down(heap, heapSize, i);
+    for (int i = (heapSize/2)-1; i >= 0; --i) heapify_down(heap, heapSize, i);
+    *outSize = heapSize;
+    return heap;
+}
+
+static void display_all_players_of_role_across_teams(Role role) {
+    if (role < 0 || role >= ROLE_COUNT) { printf("Invalid role.\n"); return; }
+    int totalN = 0;
+    for (int i = 0; i < gTeamCount; ++i) totalN += teamsArr[i].roleCounts[role];
+    if (totalN == 0) {
+        printf("\nNo players of role %s across all teams.\n", roleName(role));
+        return;
+    }
+    int heapSize = 0;
+    HeapNode *heap = build_role_heap(role, &heapSize);
+    if (!heap) { perror("malloc heap"); return; }
 
     printf("\nAll players of role %s across all teams (sorted by Perf.Index desc):\n", roleName(role));
-    printf("ID\tName\t\tTeam\t\tRole\tRuns\tAvg\tSR\tWkts\tER\tPerfIdx\n");
+    print_players_header(1);
     while (heapSize > 0) {
         HeapNode top = heap[0];
         print_player_row(top.p, 1);
@@ -371,99 +414,55 @@ static void display_all_players_of_role_across_teams(Role role) {
     }
     free(heap);
 }
-
-static int read_int() {
-    int x;
-    if (scanf("%d", &x) != 1) { while (getchar() != '\n'); return -1; }
-    while (getchar() != '\n');
-    return x;
+static Role read_role_interactive(void) {
+    int r = read_int("Role (1-Batsman, 2-Bowler, 3-All-rounder): ");
+    if (r < ROLE_BATSMAN || r > ROLE_ALLROUNDER) {
+        printf("Invalid role.\n");
+        return ROLE_UNKNOWN;
+    }
+    return (Role) r;
 }
 
-static double read_double() {
-    double d;
-    if (scanf("%lf", &d) != 1) { while (getchar() != '\n'); return 0.0; }
-    while (getchar() != '\n');
-    return d;
-}
+static PlayerNode* read_player_data_for_team(const char *teamName) {
+    char name[MAX_NAME_LEN+1];
+    read_line(name, sizeof(name), "Enter Player Name: ");
+    if (name[0] == '\0') {
+        printf("Invalid name input.\n");
+        return NULL;
+    }
 
-static void read_line(char *buf, int n) {
-    if (!fgets(buf, n, stdin)) { buf[0] = '\0'; return; }
-    size_t len = strlen(buf);
-    if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
-}
+    Role r = read_role_interactive();
+    if (r == ROLE_UNKNOWN) return NULL;
 
+    int pid = read_int("Player ID: ");
+    if (pid == -1 || !ensure_unique_id(pid)) { printf("Invalid or duplicate player id.\n"); return NULL; }
 
-static void action_add_player_to_team() {
-    printf("\nEnter Team ID to add player: ");
-    int tid = read_int();
-    int tindex = find_team_index_by_id(tid);
-    if (tindex < 0) { printf("Team ID %d not found.\n", tid); return; }
+    int runs = read_int("Total Runs: ");
+    if (runs == -1) { printf("Invalid runs.\n"); return NULL; }
 
-    char name[MAX_NAME_LEN];
-    printf("Enter Player Name: ");
-    read_line(name, MAX_NAME_LEN);
+    double avg = read_double("Batting Average: ");
+    if (isnan(avg) || avg < 0.0) { printf("Invalid batting average.\n"); return NULL; }
 
-    printf("Role (1-Batsman, 2-Bowler, 3-All-rounder): ");
-    int r = read_int();
-    if (r < 1 || r > 3) { printf("Invalid role.\n"); return; }
+    double sr = read_double("Strike Rate: ");
+    if (isnan(sr) || sr < 0.0) { printf("Invalid strike rate.\n"); return NULL; }
 
-    printf("Player ID: ");
-    int pid = read_int();
+    int wkts = read_int("Wickets: ");
+    if (wkts == -1) { printf("Invalid wickets.\n"); return NULL; }
 
-    if (pid < 0) { printf("Invalid player id.\n"); return; }
-    if (is_player_id_present(pid)) { printf("Player ID %d already exists. Cannot add duplicate.\n", pid); return; }
+    double econ = read_double("Economy Rate: ");
+    if (isnan(econ) || econ < 0.0) { printf("Invalid economy rate.\n"); return NULL; }
 
-    printf("Total Runs: ");
-    int runs = read_int();
-    printf("Batting Average: ");
-    double avg = read_double();
-    printf("Strike Rate: ");
-    double sr = read_double();
-    printf("Wickets: ");
-    int wkts = read_int();
-    printf("Economy Rate: ");
-    double econ = read_double();
+    /* Basic validation */
+    if (runs < 0 || avg < 0.0 || sr < 0.0 || wkts < 0 || econ < 0.0) {
+        printf("Numeric values must be non-negative.\n");
+        return NULL;
+    }
 
-    PlayerNode *p = create_player_node(pid, name, teamsArr[tindex].name, (Role)r,
+    PlayerNode *p = create_player_node(pid, name, teamName, r,
                                        runs, (float)avg, (float)sr, wkts, (float)econ);
-    add_player_to_team(&teamsArr[tindex], p);
-    printf("Player added successfully to Team %s!\n\n", teamsArr[tindex].name);
+    return p;
 }
-
-static void action_display_players_of_specific_team() {
-    printf("\nEnter Team ID: ");
-    int tid = read_int();
-    int tindex = find_team_index_by_id(tid);
-    if (tindex < 0) { printf("Team ID %d not found.\n", tid); return; }
-    display_team_players(&teamsArr[tindex]);
-}
-
-static void action_display_teams_by_avg_sr() {
-    display_teams_sorted_by_avg_sr();
-}
-
-static void action_display_top_k_of_team_by_role() {
-    printf("\nEnter Team ID: ");
-    int tid = read_int();
-    int tindex = find_team_index_by_id(tid);
-    if (tindex < 0) { printf("Team ID %d not found.\n", tid); return; }
-    printf("Enter Role (1-Batsman, 2-Bowler, 3-All-rounder): ");
-    int r = read_int();
-    if (r < 1 || r > 3) { printf("Invalid role.\n"); return; }
-    printf("Enter number of players (K): ");
-    int K = read_int();
-    if (K <= 0) { printf("K must be positive.\n"); return; }
-    display_top_k_players_of_team_by_role(&teamsArr[tindex], (Role)r, K);
-}
-
-static void action_display_all_players_of_role_across_teams() {
-    printf("\nEnter Role (1-Batsman, 2-Bowler, 3-All-rounder): ");
-    int r = read_int();
-    if (r < 1 || r > 3) { printf("Invalid role.\n"); return; }
-    display_all_players_of_role_across_teams((Role)r);
-}
-
-static void free_all_memory() {
+static void free_all_memory(void) {
     if (!teamsArr) return;
     for (int i = 0; i < gTeamCount; ++i) {
         PlayerNode *cur = teamsArr[i].playersHead;
@@ -472,17 +471,49 @@ static void free_all_memory() {
             free(cur);
             cur = nx;
         }
-        for (int r = 0; r < 4; ++r) {
-            if (teamsArr[i].roleArrays[r]) free(teamsArr[i].roleArrays[r]);
+        for (int r = 0; r < ROLE_COUNT; ++r) {
+            free(teamsArr[i].roleArrays[r]); 
+            teamsArr[i].roleArrays[r] = NULL;
+            teamsArr[i].roleCounts[r] = 0;
+            teamsArr[i].roleCapacity[r] = 0;
         }
     }
     free(teamsArr);
     teamsArr = NULL;
+    gTeamCount = 0;
+}
+static void action_add_player_to_team(void) {
+    int tidx = get_valid_team_index();
+    if (tidx < 0) return;
+    PlayerNode *p = read_player_data_for_team(teamsArr[tidx].name);
+    if (!p) { printf("Failed to read player data or invalid input.\n"); return; }
+    add_player_to_team(&teamsArr[tidx], p);
+    printf("Player added successfully to Team %s!\n", teamsArr[tidx].name);
 }
 
+static void action_display_players_of_specific_team(void) {
+    int tidx = get_valid_team_index();
+    if (tidx < 0) return;
+    display_team_players(&teamsArr[tidx]);
+}
+static void action_display_top_k_of_team_by_role(void) {
+    int tidx = get_valid_team_index();
+    if (tidx < 0) return;
+    Role r = read_role_interactive();
+    if (r == ROLE_UNKNOWN) return;
+    int K = read_int("Enter number of players (K): ");
+    if (K <= 0) { printf("K must be positive.\n"); return; }
+    display_top_k_players_of_team_by_role(&teamsArr[tidx], r, K);
+}
 
-static void print_menu() {
-    printf("ICC ODI Player Performance Analyzer\n");
+static void action_display_all_players_of_role_across_teams(void) {
+    Role r = read_role_interactive();
+    if (r == ROLE_UNKNOWN) return;
+    display_all_players_of_role_across_teams(r);
+}
+
+static void print_menu(void) {
+    printf("\nICC ODI Player Performance Analyzer\n");
     printf("1. Add Player to Team\n");
     printf("2. Display Players of a Specific Team\n");
     printf("3. Display Teams by Average Batting Strike Rate\n");
@@ -492,18 +523,19 @@ static void print_menu() {
     printf("Enter your choice: ");
 }
 
-int main() {
+int main(void) {
     init_teams_from_header();
     init_players_from_header();
 
-    int choice = 0;
+    int choice;
     while (1) {
         print_menu();
-        choice = read_int();
+        choice = read_int(NULL);
+        if (choice == -1) { printf("Invalid choice. Try again.\n"); continue; }
         switch (choice) {
             case 1: action_add_player_to_team(); break;
             case 2: action_display_players_of_specific_team(); break;
-            case 3: action_display_teams_by_avg_sr(); break;
+            case 3: display_teams_sorted_by_avg_sr(); break;
             case 4: action_display_top_k_of_team_by_role(); break;
             case 5: action_display_all_players_of_role_across_teams(); break;
             case 6:
@@ -514,6 +546,5 @@ int main() {
                 printf("Invalid choice. Try again.\n");
         }
     }
-
     return 0;
 }
