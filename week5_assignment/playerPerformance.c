@@ -28,6 +28,7 @@ typedef struct PlayerNode {
     float economyRate;
     double perfIndex;
     struct PlayerNode *next;
+    struct PlayerNode *nextRole;   // sorted role list
 } PlayerNode;
 
 typedef struct {
@@ -38,19 +39,11 @@ typedef struct {
     int batterCount;
     double avgBattingStrikeRate;
     PlayerNode *playersHead;
-    PlayerNode **roleArrays[ROLE_COUNT];
-    int roleCounts[ROLE_COUNT];
-    int roleCapacity[ROLE_COUNT];
+    PlayerNode *roleLists[ROLE_COUNT];
 } Team;
-
-typedef struct {
-    PlayerNode *p;
-    int teamIdx;
-    int idxInArray;
-} HeapNode;
-
-static Team *teamsArr = NULL;
+static Team teamsArr[10];  
 static int gTeamCount = 0;
+
 static void scopy(char *dest, const char *src, size_t destSize) {
     if (!dest || destSize == 0) return;
     if (!src) { dest[0] = '\0'; return; }
@@ -77,8 +70,6 @@ static Role role_from_string(const char *rstr) {
     return ROLE_UNKNOWN;
 }
 static double compute_perf_index(const PlayerNode *p) {
-    if (!p) return 0.0;
-
     if (p->role == ROLE_BATSMAN) {
         return (p->battingAverage * p->strikeRate) / 100.0;
     } else if (p->role == ROLE_BOWLER) {
@@ -183,37 +174,30 @@ static PlayerNode* create_player_node(int id, const char *name, const char *team
     p->economyRate = econ;
     p->perfIndex = compute_perf_index(p);
     p->next = NULL;
+    p->nextRole = NULL;
     return p;
 }
-static void ensure_role_capacity(Team *team, int role, int want) {
-    if (team->roleCapacity[role] >= want) return;
-
-    int newcap = team->roleCapacity[role] == 0 ? 8 : team->roleCapacity[role] * 2;
-    while (newcap < want) newcap *= 2;
-
-    PlayerNode **tmp =
-        realloc(team->roleArrays[role], sizeof(PlayerNode*) * newcap);
-
-    if (!tmp) { perror("realloc roleArrays"); exit(EXIT_FAILURE); }
-
-    team->roleArrays[role] = tmp;
-    team->roleCapacity[role] = newcap;
-}
-
 static void insert_role_sorted(Team *team, int role, PlayerNode *p) {
-    int n = team->roleCounts[role];
-    ensure_role_capacity(team, role, n + 1);
+    if (role < ROLE_BATSMAN || role > ROLE_ALLROUNDER) {
+        fprintf(stderr, "Error: insert_role_sorted() called with invalid role %d\n", role);
+        return;
+    }
 
-    int pos = 0;
-    while (pos < n && team->roleArrays[role][pos]->perfIndex >= p->perfIndex)
-        pos++;
+    PlayerNode **head = &team->roleLists[role];
 
-    for (int i = n; i > pos; --i)
-        team->roleArrays[role][i] = team->roleArrays[role][i - 1];
+    if (*head == NULL || (*head)->perfIndex < p->perfIndex) {
+        p->nextRole = *head;     
+        *head = p;
+        return;
+    }
+    PlayerNode *cur = *head;
+    while (cur->nextRole && cur->nextRole->perfIndex >= p->perfIndex)
+        cur = cur->nextRole;
 
-    team->roleArrays[role][pos] = p;
-    team->roleCounts[role]++;
+    p->nextRole = cur->nextRole;
+    cur->nextRole = p;
 }
+
 static void team_add_batting_sr(Team *team, float sr) {
     team->sumBattingSR += sr;
     team->batterCount++;
@@ -225,16 +209,13 @@ static void add_player_to_team(Team *team, PlayerNode *p) {
     p->next = team->playersHead;
     team->playersHead = p;
     team->totalPlayers++;
-    int r = (p->role >= ROLE_BATSMAN && p->role <= ROLE_ALLROUNDER) ?
-            (int)p->role : ROLE_UNKNOWN;
-    insert_role_sorted(team, r, p);
+    insert_role_sorted(team, p->role, p);
 
     if (p->role == ROLE_BATSMAN || p->role == ROLE_ALLROUNDER)
         team_add_batting_sr(team, p->strikeRate);
 }
 static void init_teams_from_header(void) {
-    gTeamCount = teamCount;
-    teamsArr =malloc(sizeof(Team) * gTeamCount);
+    gTeamCount = teamCount; 
 
     for (int i = 0; i < gTeamCount; ++i) {
         teamsArr[i].teamId = i + 1;
@@ -245,11 +226,8 @@ static void init_teams_from_header(void) {
         teamsArr[i].avgBattingStrikeRate = 0.0;
         teamsArr[i].playersHead = NULL;
 
-        for (int r = 0; r < ROLE_COUNT; ++r) {
-            teamsArr[i].roleArrays[r] = NULL;
-            teamsArr[i].roleCounts[r] = 0;
-            teamsArr[i].roleCapacity[r] = 0;
-        }
+        for (int r = 0; r < ROLE_COUNT; r++)
+            teamsArr[i].roleLists[r] = NULL;
     }
 }
 
@@ -257,13 +235,6 @@ static void init_players_from_header(void) {
     for (int i = 0; i < playerCount; ++i) {
         const Player *hp = &players[i];
         Role r = role_from_string(hp->role);
-
-        if (is_player_id_present(hp->id)) {
-            fprintf(stderr,
-                "Warning: duplicate player id %d for %s. Skipping.\n",
-                hp->id, hp->name);
-            continue;
-        }
 
         int tidx = find_team_index_by_name(hp->team);
         if (tidx < 0) {
@@ -273,8 +244,7 @@ static void init_players_from_header(void) {
             continue;
         }
 
-        PlayerNode *p =
-            create_player_node(hp->id, hp->name, hp->team, r,
+        PlayerNode *p =create_player_node(hp->id, hp->name, hp->team, r,
                                hp->totalRuns, hp->battingAverage,
                                hp->strikeRate, hp->wickets, hp->economyRate);
 
@@ -319,15 +289,19 @@ static void display_top_k_players_of_team_by_role(const Team *team, Role role, i
            K, roleName(role), team->name, team->teamId);
 
     print_players_header(0);
-    int n = team->roleCounts[role];
-    if (n == 0) {
-        printf("No players of role %s in this team.\n", roleName(role));
-        return;
+    PlayerNode *cur = team->roleLists[role];
+    int count = 0;
+
+    while (cur && count < K) {
+        print_player_row(cur, 0);
+        cur = cur->nextRole;
+        count++;
     }
-    int limit = (K < n) ? K : n;
-    for (int i = 0; i < limit; ++i)
-        print_player_row(team->roleArrays[role][i], 0);
+
+    if (count == 0)
+        printf("No players of role %s.\n", roleName(role));
 }
+
 
 static int cmp_team_avg_sr_desc(const void *a, const void *b) {
     const Team *ta = *(const Team**)a;
@@ -354,69 +328,33 @@ static void display_teams_sorted_by_avg_sr(void) {
     }
     free(tmp);
 }
-static void heap_swap(HeapNode *a, HeapNode *b) {
-    HeapNode tmp = *a; *a = *b; *b = tmp;
-}
-
-static void heapify_down(HeapNode heap[], int size, int idx) {
-    while (1) {
-        int l = 2*idx + 1, r = 2*idx + 2;
-        int largest = idx;
-        if (l < size && heap[l].p->perfIndex > heap[largest].p->perfIndex)
-            largest = l;
-        if (r < size && heap[r].p->perfIndex > heap[largest].p->perfIndex)
-            largest = r;
-
-        if (largest != idx) {
-            heap_swap(&heap[largest], &heap[idx]);
-            idx = largest;
-        } else break;
-    }
-}
-
-static HeapNode *build_role_heap(int role, int *outSize) {
-    HeapNode *heap = malloc(sizeof(HeapNode) * gTeamCount);
-    int heapSize = 0;
-    for (int i = 0; i < gTeamCount; ++i) {
-        if (teamsArr[i].roleCounts[role] > 0) {
-            heap[heapSize].p = teamsArr[i].roleArrays[role][0];
-            heap[heapSize].teamIdx = i;
-            heap[heapSize].idxInArray = 0;
-            heapSize++;
-        }
-    }
-    for (int i = (heapSize/2)-1; i >= 0; --i)
-        heapify_down(heap, heapSize, i);
-
-    *outSize = heapSize;
-    return heap;
-}
-
 static void display_all_players_of_role_across_teams(Role role) {
     printf("\nAll players of role %s across all teams:\n", roleName(role));
     print_players_header(1);
-    int heapSize = 0;
-    HeapNode *heap = build_role_heap(role, &heapSize);
 
-    while (heapSize > 0) {
-        HeapNode top = heap[0];
-        print_player_row(top.p, 1);
-        int t = top.teamIdx;
-        int nextIdx = top.idxInArray + 1;
-        if (nextIdx < teamsArr[t].roleCounts[role]) {
-            heap[0].p = teamsArr[t].roleArrays[role][nextIdx];
-            heap[0].teamIdx = t;
-            heap[0].idxInArray = nextIdx;
-        } else {
-            heap[0] = heap[heapSize - 1];
-            heapSize--;
+    PlayerNode *cur[gTeamCount];    // FIXED
+
+    for (int i = 0; i < gTeamCount; i++)
+        cur[i] = teamsArr[i].roleLists[role];
+
+    while (1) {
+        int bestIdx = -1;
+
+        for (int i = 0; i < gTeamCount; i++) {
+            if (!cur[i]) continue;
+
+            if (bestIdx == -1 ||
+                cur[i]->perfIndex > cur[bestIdx]->perfIndex)
+                bestIdx = i;
         }
 
-        if (heapSize > 0)
-            heapify_down(heap, heapSize, 0);
+        if (bestIdx == -1) break;
+
+        print_player_row(cur[bestIdx], 1);
+        cur[bestIdx] = cur[bestIdx]->nextRole;
     }
-    free(heap);
 }
+
 static int is_valid_name(const char *s) {
     if (!s || s[0] == '\0') return 0;
     for (int i = 0; s[i]; i++) {
@@ -490,22 +428,21 @@ static PlayerNode* read_player_data_for_team(const char *teamName) {
     return create_player_node(pid, name, teamName, r,runs, (float)avg, (float)sr,wkts, (float)econ);
 }
 static void free_all_memory(void) {
-    if (!teamsArr) return;
-
     for (int i = 0; i < gTeamCount; ++i) {
-        PlayerNode *cur = teamsArr[i].playersHead;
-        while (cur) {
-            PlayerNode *nx = cur->next;
-            free(cur);
-            cur = nx;
+        PlayerNode *curr = teamsArr[i].playersHead;
+
+        while (curr) {
+            PlayerNode *next = curr->next;  
+            free(curr);
+            curr = next;
         }
+        teamsArr[i].playersHead = NULL;
         for (int r = 0; r < ROLE_COUNT; ++r) {
-            free(teamsArr[i].roleArrays[r]);
+            teamsArr[i].roleLists[r] = NULL;
         }
     }
-    free(teamsArr);
-    teamsArr = NULL;
 }
+
 static void action_add_player_to_team(void) {
     int tidx = get_valid_team_index();
     if (tidx < 0) return;
