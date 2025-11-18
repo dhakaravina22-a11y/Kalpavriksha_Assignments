@@ -27,7 +27,6 @@ typedef struct PlayerNode {
     int wickets;
     float economyRate;
     double perfIndex;
-    struct PlayerNode *next;
     struct PlayerNode *nextRole;   // sorted role list
 } PlayerNode;
 
@@ -38,7 +37,6 @@ typedef struct {
     double sumBattingSR;
     int batterCount;
     double avgBattingStrikeRate;
-    PlayerNode *playersHead;
     PlayerNode *roleLists[ROLE_COUNT];
 } Team;
 static Team teamsArr[10];  
@@ -147,15 +145,19 @@ static int get_valid_team_index(void) {
     return idx;
 }
 static int is_player_id_present(int pid) {
+    if (pid < 0) return 0;
     for (int i = 0; i < gTeamCount; ++i) {
-        PlayerNode *cur = teamsArr[i].playersHead;
-        while (cur) {
-            if (cur->id == pid) return 1;
-            cur = cur->next;
+        for (int r = ROLE_BATSMAN; r <= ROLE_ALLROUNDER; ++r) {
+            PlayerNode *cur = teamsArr[i].roleLists[r];
+            while (cur) {
+                if (cur->id == pid) return 1;
+                cur = cur->nextRole;
+            }
         }
     }
     return 0;
 }
+
 static PlayerNode* create_player_node(int id, const char *name, const char *teamName,
                                       Role role, int runs, float avg, float sr,
                                       int wkts, float econ)
@@ -173,7 +175,6 @@ static PlayerNode* create_player_node(int id, const char *name, const char *team
     p->wickets = wkts;
     p->economyRate = econ;
     p->perfIndex = compute_perf_index(p);
-    p->next = NULL;
     p->nextRole = NULL;
     return p;
 }
@@ -206,14 +207,13 @@ static void team_add_batting_sr(Team *team, float sr) {
 }
 
 static void add_player_to_team(Team *team, PlayerNode *p) {
-    p->next = team->playersHead;
-    team->playersHead = p;
-    team->totalPlayers++;
+    
     insert_role_sorted(team, p->role, p);
-
+    team->totalPlayers++;
     if (p->role == ROLE_BATSMAN || p->role == ROLE_ALLROUNDER)
         team_add_batting_sr(team, p->strikeRate);
 }
+
 static void init_teams_from_header(void) {
     gTeamCount = teamCount; 
 
@@ -224,7 +224,6 @@ static void init_teams_from_header(void) {
         teamsArr[i].sumBattingSR = 0.0;
         teamsArr[i].batterCount = 0;
         teamsArr[i].avgBattingStrikeRate = 0.0;
-        teamsArr[i].playersHead = NULL;
 
         for (int r = 0; r < ROLE_COUNT; r++)
             teamsArr[i].roleLists[r] = NULL;
@@ -276,14 +275,19 @@ static void print_player_row(const PlayerNode *p, int showTeam) {
 static void display_team_players(const Team *team) {
     printf("\nPlayers of Team %s (ID %d):\n", team->name, team->teamId);
     print_players_header(0);
-    PlayerNode *cur = team->playersHead;
-    while (cur) {
-        print_player_row(cur, 0);
-        cur = cur->next;
+
+    for (int r = ROLE_BATSMAN; r <= ROLE_ALLROUNDER; ++r) {
+        PlayerNode *cur = team->roleLists[r];
+        while (cur) {
+            print_player_row(cur, 0);
+            cur = cur->nextRole;
+        }
     }
+
     printf("Total Players: %d\n", team->totalPlayers);
     printf("Average Batting Strike Rate: %.2f\n", team->avgBattingStrikeRate);
 }
+
 static void display_top_k_players_of_team_by_role(const Team *team, Role role, int K) {
     printf("\nTop %d %s of Team %s (ID %d):\n",
            K, roleName(role), team->name, team->teamId);
@@ -429,17 +433,19 @@ static PlayerNode* read_player_data_for_team(const char *teamName) {
 }
 static void free_all_memory(void) {
     for (int i = 0; i < gTeamCount; ++i) {
-        PlayerNode *curr = teamsArr[i].playersHead;
-
-        while (curr) {
-            PlayerNode *next = curr->next;  
-            free(curr);
-            curr = next;
-        }
-        teamsArr[i].playersHead = NULL;
-        for (int r = 0; r < ROLE_COUNT; ++r) {
+        for (int r = ROLE_BATSMAN; r <= ROLE_ALLROUNDER; ++r) {
+            PlayerNode *curr = teamsArr[i].roleLists[r];
+            while (curr) {
+                PlayerNode *next = curr->nextRole;
+                free(curr);
+                curr = next;
+            }
             teamsArr[i].roleLists[r] = NULL;
         }
+        teamsArr[i].totalPlayers = 0;
+        teamsArr[i].sumBattingSR = 0.0;
+        teamsArr[i].batterCount = 0;
+        teamsArr[i].avgBattingStrikeRate = 0.0;
     }
 }
 
