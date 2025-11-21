@@ -3,30 +3,26 @@
 #include <string.h>
 
 #define VALUE_LEN 100
-#define HASH_SIZE 10007
+#define HASH_SIZE 10007   
 
 typedef struct Node {
     int key;
-    char value[VALUE_LEN+1];
+    char value[VALUE_LEN + 1];
     struct Node *prev, *next;
 } Node;
-
-typedef struct HashNode {
-    int key;
-    Node *node;
-    struct HashNode *next;
-} HashNode;
 
 typedef struct {
     int capacity;
     int size;
-    Node *head, *tail;       
-    HashNode **hash;
+    Node *head, *tail;
+    Node **hash;   
 } LRUCache;
+
 
 int hashKey(int key) {
     return key % HASH_SIZE;
 }
+
 
 Node* createNode(int key, const char *value) {
     Node *n = (Node*)malloc(sizeof(Node));
@@ -36,6 +32,7 @@ Node* createNode(int key, const char *value) {
     return n;
 }
 
+
 void addToFront(LRUCache *obj, Node *n) {
     n->next = obj->head->next;
     n->prev = obj->head;
@@ -43,51 +40,19 @@ void addToFront(LRUCache *obj, Node *n) {
     obj->head->next = n;
 }
 
+
 void removeNode(Node *n) {
     n->prev->next = n->next;
     n->next->prev = n->prev;
 }
 
-HashNode* hashFind(HashNode *list, int key) {
-    while (list) {
-        if (list->key == key) return list;
-        list = list->next;
-    }
-    return NULL;
-}
 
-void hashInsert(LRUCache *obj, int key, Node *node) {
-    int h = hashKey(key);
-    HashNode *hn = (HashNode*)malloc(sizeof(HashNode));
-
-    hn->key = key;
-    hn->node = node;
-    hn->next = obj->hash[h];
-    obj->hash[h] = hn;
-}
-
-void hashRemove(LRUCache *obj, int key) {
-    int h = hashKey(key);
-    HashNode *curr = obj->hash[h], *prev = NULL;
-
-    while (curr) {
-        if (curr->key == key) {
-            if (prev) prev->next = curr->next;
-            else obj->hash[h] = curr->next;
-            free(curr);
-            return;
-        }
-        prev = curr;
-        curr = curr->next;
-    }
-}
-//creating dummy head and tail
 LRUCache* createCache(int capacity) {
     LRUCache *obj = (LRUCache*)malloc(sizeof(LRUCache));
     obj->capacity = capacity;
     obj->size = 0;
 
-    obj->hash = (HashNode**)calloc(HASH_SIZE, sizeof(HashNode*));
+    obj->hash = (Node**)calloc(HASH_SIZE, sizeof(Node*));
 
     obj->head = createNode(-1, "");
     obj->tail = createNode(-1, "");
@@ -98,12 +63,15 @@ LRUCache* createCache(int capacity) {
     return obj;
 }
 
+
 char* getValue(LRUCache *obj, int key) {
-    HashNode *hn = hashFind(obj->hash[hashKey(key)], key);
-    if (!hn)
+    int h = hashKey(key);
+
+    Node *n = obj->hash[h];
+
+    if (!n || n->key != key)     
         return NULL;
 
-    Node *n = hn->node;
     removeNode(n);
     addToFront(obj, n);
 
@@ -111,26 +79,34 @@ char* getValue(LRUCache *obj, int key) {
 }
 
 void putValue(LRUCache *obj, int key, const char *value) {
-    HashNode *hn = hashFind(obj->hash[hashKey(key)], key);
+    int h = hashKey(key);
 
-    if (hn) {
-        Node *n = hn->node;
+    Node *n = obj->hash[h];
+
+   
+    if (n && n->key == key) {
         strcpy(n->value, value);
         removeNode(n);
         addToFront(obj, n);
         return;
     }
 
+    
     Node *newNode = createNode(key, value);
     addToFront(obj, newNode);
-    hashInsert(obj, key, newNode);
+    obj->hash[h] = newNode;
     obj->size++;
 
+    
     if (obj->size > obj->capacity) {
         Node *lru = obj->tail->prev;
-        hashRemove(obj, lru->key);
+
+        int oldH = hashKey(lru->key);
+        obj->hash[oldH] = NULL;   
+
         removeNode(lru);
         free(lru);
+
         obj->size--;
     }
 }
@@ -144,18 +120,10 @@ void freeCache(LRUCache *obj) {
         curr = next;
     }
 
-    for (int i = 0; i < HASH_SIZE; i++) {
-        HashNode *hn = obj->hash[i];
-        while (hn) {
-            HashNode *next = hn->next;
-            free(hn);
-            hn = next;
-        }
-    }
-
     free(obj->hash);
     free(obj);
 }
+
 int main() {
     char command[50];
     LRUCache *cache = NULL;
