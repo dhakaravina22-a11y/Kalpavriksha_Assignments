@@ -3,7 +3,7 @@
 #include <string.h>
 
 #define VALUE_LEN 100
-#define HASH_SIZE 10007
+#define HASH_SIZE 1009
 
 typedef struct Node {
     int key;
@@ -25,11 +25,22 @@ typedef struct {
 } LRUCache;
 
 int hashKey(int key) {
-    return key % HASH_SIZE;
+    int h = key % HASH_SIZE;
+
+    if (h < 0) {
+        h += HASH_SIZE;
+    }
+
+    return h;
 }
+
 
 Node* createNode(int key, const char *value) {
     Node *n = (Node*)malloc(sizeof(Node));
+    if (!n) {
+        fprintf(stderr, "Memory allocation failed for Node\n");
+        return NULL;
+    }
     n->key = key;
     strcpy(n->value, value);
     n->prev = n->next = NULL;
@@ -37,15 +48,33 @@ Node* createNode(int key, const char *value) {
 }
 
 void addToFront(LRUCache *obj, Node *n) {
-    n->next = obj->head->next;
-    n->prev = obj->head;
-    obj->head->next->prev = n;
-    obj->head->next = n;
-}
 
-void removeNode(Node *n) {
-    n->prev->next = n->next;
-    n->next->prev = n->prev;
+    n->prev = NULL;
+    n->next = obj->head;
+
+    if (obj->head){
+        obj->head->prev = n;
+    }
+
+    obj->head = n;
+    if (obj->tail == NULL){
+        obj->tail = n;
+    }
+}
+void removeNode(LRUCache *obj, Node *n) {
+    if (n->prev){
+        n->prev->next = n->next;
+    }else{
+        obj->head = n->next;
+    }
+
+    if (n->next){
+        n->next->prev = n->prev;
+    }else{
+        obj->tail = n->prev;
+    }
+
+    n->next = n->prev = NULL;
 }
 
 HashNode* hashFind(HashNode *list, int key) {
@@ -59,6 +88,10 @@ HashNode* hashFind(HashNode *list, int key) {
 void hashInsert(LRUCache *obj, int key, Node *node) {
     int h = hashKey(key);
     HashNode *hn = (HashNode*)malloc(sizeof(HashNode));
+    if (!hn) {
+        fprintf(stderr, "Memory allocation failed for HashNode\n");
+        return;
+    }
 
     hn->key = key;
     hn->node = node;
@@ -81,30 +114,35 @@ void hashRemove(LRUCache *obj, int key) {
         curr = curr->next;
     }
 }
-//creating dummy head and tail
 LRUCache* createCache(int capacity) {
     LRUCache *obj = (LRUCache*)malloc(sizeof(LRUCache));
+    if (!obj) {
+        fprintf(stderr, "Memory allocation failed for LRUCache\n");
+        return NULL;
+    }
     obj->capacity = capacity;
     obj->size = 0;
+    obj->head = NULL;   
+    obj->tail = NULL;
 
     obj->hash = (HashNode**)calloc(HASH_SIZE, sizeof(HashNode*));
-
-    obj->head = createNode(-1, "");
-    obj->tail = createNode(-1, "");
-
-    obj->head->next = obj->tail;
-    obj->tail->prev = obj->head;
+    if (!obj->hash) {
+        fprintf(stderr, "Calloc failed for hash table\n");
+        free(obj);
+        return NULL;
+    }
 
     return obj;
 }
 
 char* getValue(LRUCache *obj, int key) {
     HashNode *hn = hashFind(obj->hash[hashKey(key)], key);
-    if (!hn)
+    if (!hn){
         return NULL;
+    }
 
     Node *n = hn->node;
-    removeNode(n);
+    removeNode(obj, n);
     addToFront(obj, n);
 
     return n->value;
@@ -116,7 +154,7 @@ void putValue(LRUCache *obj, int key, const char *value) {
     if (hn) {
         Node *n = hn->node;
         strcpy(n->value, value);
-        removeNode(n);
+        removeNode(obj,n);
         addToFront(obj, n);
         return;
     }
@@ -127,9 +165,9 @@ void putValue(LRUCache *obj, int key, const char *value) {
     obj->size++;
 
     if (obj->size > obj->capacity) {
-        Node *lru = obj->tail->prev;
+        Node *lru = obj->tail;
         hashRemove(obj, lru->key);
-        removeNode(lru);
+        removeNode(obj,lru);
         free(lru);
         obj->size--;
     }
