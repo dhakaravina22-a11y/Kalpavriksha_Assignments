@@ -15,14 +15,15 @@ typedef enum ProcessState {
 } ProcessState;
 
 typedef struct ProcessControlBlock {
-    char name[SIZE+1];
-    int burstTime;
-    int remBurstTime;
+    char name[SIZE + 1];
+    unsigned int burstTime;
+    unsigned int remBurstTime;
     int ioStartTime;
-    int ioDuration;
-    int ioRemaining;
-    int cpuExecuted;
-    ProcessState state; 
+    unsigned int ioDuration;
+    unsigned int ioRemaining;
+    unsigned int cpuExecuted;
+
+    ProcessState state;
     int turnAroundTime;
     int waitingTime;
     bool ioStartedThisTick;
@@ -57,7 +58,7 @@ HashMap* createHashMap() {
     HashMap* temp = malloc(sizeof(HashMap));
     if (!temp){
         printf("Memory Allocation Failed!\n");
-        exit(1);
+        return NULL;
     }
 
     for (int index = 0; index < HASH_SIZE; index++){
@@ -71,7 +72,7 @@ HashNode* createHashNode(int key, ProcessControlBlock* pcb) {
     HashNode* newNode = malloc(sizeof(HashNode));
     if (!newNode){
         printf("Memory Allocation Failed!\n");
-        exit(1);
+        return NULL;
     }
 
     newNode->key = key;
@@ -136,7 +137,7 @@ Queue* createQueue() {
     Queue* queue = malloc(sizeof(Queue));
     if (!queue){
         printf("Memory Allocation Failed!\n");
-        exit(1);
+        return NULL;
     }
     queue->front = queue->rear = NULL;
     return queue;
@@ -242,7 +243,7 @@ KillEvent* createKillEvents(int killCount) {
     KillEvent* kills = malloc(killCount * sizeof(KillEvent));
     if (!kills){
         printf("Memory Allocation Failed\n");
-        exit(1);
+        return NULL;
     }
 
     for (int index = 0; index < killCount; index++){
@@ -421,7 +422,7 @@ ProcessControlBlock* createProcess() {
     ProcessControlBlock* pcb = malloc(sizeof(ProcessControlBlock));
     if (!pcb){
         printf("Memory Allocation Failed!\n");
-        exit(1);
+        return NULL;
     }
 
     pcb->cpuExecuted = 0;
@@ -436,21 +437,47 @@ ProcessControlBlock* createProcess() {
 
 void readProcessInput(HashMap* hashMap, Queue* readyQueue, int* totalProcesses) {
 
-    printf("Enter number of processes: "); 
-    scanf("%d", totalProcesses);
+    printf("Enter number of processes: ");
+    char line[256];
+    if (!fgets(line, sizeof(line), stdin)) {
+        printf("Error reading number of processes!\n");
+        return;
+    }
+    *totalProcesses = atoi(line);
 
     printf("name  pid  burst  ioStart  ioDuration\n");
     printf("(Use '-' for no I/O)\n\n");
 
     for (int i = 0; i < *totalProcesses; i++) {
 
-        char name[SIZE];
+        printf("Process %d: ", i + 1);
+
+        char name[SIZE + 1];
         char ioStartStr[20], ioDurStr[20];
         int pid, burst;
 
-        scanf("%s %d %d %s %s", name, &pid, &burst, ioStartStr, ioDurStr);
 
+        if (!fgets(line, sizeof(line), stdin)) {
+            printf("Error reading process input!\n");
+            return;
+        }
+
+        int fields = sscanf(
+            line,
+            "%100s %d %d %19s %19s",
+            name, &pid, &burst, ioStartStr, ioDurStr
+        );
+
+        
+        if (fields < 5) {
+            printf("Invalid input format! Please re-enter.\n");
+            i--;    
+            continue;
+        }
+
+       
         ProcessControlBlock* pcb = createProcess();
+
         strcpy(pcb->name, name);
 
         pcb->burstTime = burst;
@@ -458,12 +485,14 @@ void readProcessInput(HashMap* hashMap, Queue* readyQueue, int* totalProcesses) 
 
         
         if (strcmp(ioStartStr, "-") == 0 || strcmp(ioDurStr, "-") == 0) {
-            pcb->ioStartTime = -1;   
+            pcb->ioStartTime = -1;
             pcb->ioDuration = 0;
-        } else {
+        }
+        else {
             pcb->ioStartTime = atoi(ioStartStr);
             pcb->ioDuration = atoi(ioDurStr);
 
+            
             if (pcb->ioStartTime < 0 || pcb->ioDuration <= 0) {
                 pcb->ioStartTime = -1;
                 pcb->ioDuration = 0;
@@ -513,4 +542,5 @@ int main() {
 
     freeQueue(readyQueue);
     freeHashMap(hashMap);
+    return 0;
 }
