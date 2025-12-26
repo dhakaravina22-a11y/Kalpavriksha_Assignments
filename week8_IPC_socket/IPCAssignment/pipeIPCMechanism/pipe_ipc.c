@@ -73,19 +73,35 @@ void sortArray(int *arr, int size)
     }
 }
 
-void sendDataThroughPipe(int writeFd, int *arr, int size)
-{
-    write(writeFd, &size, sizeof(int));
-    write(writeFd, arr, size * sizeof(int));
+void sendDataThroughPipe(int writeFd, int *arr, int size){
+    if (write(writeFd, &size, sizeof(int)) != sizeof(int)) {
+        perror("write size failed");
+        return;
+    }
+
+    if (write(writeFd, arr, size * sizeof(int)) != size * sizeof(int)) {
+        perror("write array failed");
+        return;
+    }
 }
 
-int receiveDataThroughPipe(int readFd, int *arr)
-{
+
+int receiveDataThroughPipe(int readFd, int *arr){
     int size;
-    read(readFd, &size, sizeof(int));
-    read(readFd, arr, size * sizeof(int));
+
+    if (read(readFd, &size, sizeof(int)) != sizeof(int)){
+        perror("read size failed");
+        return -1;
+    }
+
+    if (read(readFd, arr, size * sizeof(int)) != size * sizeof(int)){
+        perror("read array failed");
+        return -1;
+    }
+
     return size;
 }
+
 
 void parentProcess(int *array, int size, int *pipe1, int *pipe2)
 {
@@ -144,7 +160,12 @@ void initiatePipeIPC()
 
     if (pid < 0)
     {
-        printf("Fork failed.\n");
+        perror("Fork failed");
+        close(pipe1[0]);
+        close(pipe1[1]);
+        close(pipe2[0]);
+        close(pipe2[1]);
+
         return;
     }
     else if (pid == 0)

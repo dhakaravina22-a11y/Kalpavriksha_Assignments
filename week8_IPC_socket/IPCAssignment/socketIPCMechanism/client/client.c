@@ -105,15 +105,30 @@ int prepareRequest(int choice, char* request){
     return 1;
 }
 
-void sendRequest(int clientSocket, char* request){
-    send(clientSocket, request, strlen(request), 0);
+void sendRequest(int clientSocket, char *request){
+    ssize_t bytesSent = send(clientSocket, request, strlen(request), 0);
+
+    if (bytesSent < 0) {
+        perror("send failed");
+    }
 }
+
 
 void receiveAndDisplayResponse(int clientSocket){
     char buffer[BUFFER_SIZE];
     memset(buffer, 0, BUFFER_SIZE);
-    recv(clientSocket, buffer, BUFFER_SIZE, 0);
-    
+    ssize_t bytesRead = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+
+    if (bytesRead < 0) {
+        perror("recv failed");
+        return;
+    }
+
+    if (bytesRead == 0) {
+        printf("Server closed the connection.\n");
+        return;
+    }
+
     printf("\n--- Server Response ---\n");
     printf("%s\n", buffer);
     printf("=======================\n");

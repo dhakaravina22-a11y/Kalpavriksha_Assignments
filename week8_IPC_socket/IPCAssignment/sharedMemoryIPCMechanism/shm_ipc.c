@@ -125,10 +125,14 @@ void childProcess(SharedData *sharedData)
     sharedData->ready = 2;
 }
 
-void cleanupSharedMemory(SharedData *sharedData, int shmid)
-{
-    shmdt(sharedData);
-    shmctl(shmid, IPC_RMID, NULL);
+void cleanupSharedMemory(SharedData *sharedData, int shmid){
+    if (shmdt(sharedData) == -1) {
+        perror("shmdt failed");
+    }
+
+    if (shmctl(shmid, IPC_RMID, NULL) == -1) {
+        perror("shmctl IPC_RMID failed");
+    }
 }
 
 void initiateSharedMemoryIPC()

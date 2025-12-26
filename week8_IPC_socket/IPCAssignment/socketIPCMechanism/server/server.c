@@ -22,8 +22,7 @@ typedef struct
     int clientNumber;
 } ClientInfo;
 
-float readBalance()
-{
+float readBalance(){
     FILE *file = fopen(ACCOUNT_FILE, "r");
     if (!file)
     {
@@ -36,10 +35,16 @@ float readBalance()
         }
         return 10000.00;
     }
-    float balance;
-    fscanf(file, "%f", &balance);
+    float balance = 0.0f;
+
+    if (fscanf(file, "%f", &balance) != 1) {
+        printf("Error: Failed to read balance. Using default value 10000.00\n");
+        balance = 10000.00f;
+    }
+
     fclose(file);
     return balance;
+
 }
 
 void writeBalance(float balance)

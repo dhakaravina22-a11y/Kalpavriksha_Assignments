@@ -68,9 +68,19 @@ int readArrayFromFile(int *arr){
         return 0;
     }
     int size;
-    fscanf(file, "%d", &size);
+    if (fscanf(file, "%d", &size) != 1) {
+        fprintf(stderr, "Error: Failed to read size from file\n");
+        fclose(file);
+        return -1;
+    }
+
     for (int i = 0; i < size; i++){
-        fscanf(file, "%d", &arr[i]);
+        if (fscanf(file, "%d", &arr[i]) != 1) {
+        fprintf(stderr, "Error: Failed to read element %d from file\n", i);
+        fclose(file);
+        return -1;  
+    }
+
     }
     fclose(file);
     return size;
@@ -96,21 +106,32 @@ void parentProcess(int *array, int size){
     printf("Data written to file: %s\n", FILENAME);
 }
 
-void childProcess(){
+void childProcess() {
     printf("\n--- Process 2 - Child ---\n");
+
     int childArray[MAX_SIZE];
     int childSize = readArrayFromFile(childArray);
-    printf("Child process sorting the array...\n ");
+
+    if (childSize <= 0) {
+        fprintf(stderr, "Error: Failed to read array from file\n");
+        return;   
+    }
+
+    printf("Array read from file: ");
+    displayArray(childArray, childSize);
+
     sortArray(childArray, childSize);
-    writeArrayToFile(childArray, childSize);
-    printf("\nSorted data written back to file.\n");
+
+    printf("Array after sorting: ");
+    displayArray(childArray, childSize);
 }
+
 
 void initiateFileIPC(){
     int array[MAX_SIZE];
     int size;
 
-    printf("File-Based IPC Mechanism");
+    printf("File-Based IPC Mechanism\n");
     size = readInputArray(array);
     if (size == -1){
         return;
@@ -133,6 +154,14 @@ void initiateFileIPC(){
         int sortedSize = readArrayFromFile(sortedArray);
         printf("Array after sorting: ");
         displayArray(sortedArray, sortedSize);
+        
+        //Delete temporary file
+        if (remove(FILENAME) != 0) {
+            perror("Failed to delete temporary file");
+        } else {
+            printf("Temporary file deleted successfully\n");
+        }
+    
     }
     printf("File-Based IPC Completed Successfully");
     
